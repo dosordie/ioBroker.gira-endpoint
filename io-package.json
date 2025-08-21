@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "news": {
+      "0.1.0": {
+        "en": "Adapter basically working and tested",
+        "de": "Adapter grob lauffähig und getestet"
+      },
       "0.0.1": {
         "en": "Initial version (WS client, reconnect, basic event mapping)",
         "de": "Erste Version (WS-Client, Reconnect, Basis-Event-Mapping)"
@@ -94,13 +98,4 @@
       "_id": "info.lastError",
       "type": "state",
       "common": {
-        "name": "Last error",
-        "type": "string",
-        "role": "text",
-        "read": true,
-        "write": false
-      },
-      "native": {}
-    }
-  ]
-}
+        "name": "Last error"
