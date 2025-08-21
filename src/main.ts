@@ -101,6 +101,13 @@ class GiraEndpointAdapter extends utils.Adapter {
       });
 
       this.client.on("event", async (payload: any) => {
+        // Provide full event information for debugging
+        this.log.debug(`Received event: ${JSON.stringify(payload)}`);
+        await this.setStateAsync("info.lastEvent", {
+          val: JSON.stringify(payload),
+          ack: true,
+        });
+
         const data = payload?.data;
         if (!data) return;
         const items = Array.isArray(data) ? data : [data];
@@ -118,6 +125,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             native: {},
           });
           this.subscribeStates(id);
+          this.log.debug(`Updating state ${id} -> ${JSON.stringify(val)}`);
           await this.setStateAsync(id, { val, ack: true });
         }
       });
