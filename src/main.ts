@@ -66,6 +66,12 @@ class GiraEndpointAdapter extends utils.Adapter {
         await this.setStateAsync("info.connection", { val: false, ack: true });
         this.log.debug("Pre-created info states");
 
+      await this.setObjectNotExistsAsync("objekte", {
+        type: "channel",
+        common: { name: "Objekte" },
+        native: {},
+      });
+
         const cfg = this.config as unknown as NativeConfig;
         const host = String(cfg.host ?? "").trim();
         const port = Number(cfg.port ?? 80);
@@ -91,7 +97,7 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       // Pre-create configured endpoint states so they appear immediately in ioBroker
       for (const key of this.endpointKeys) {
-        const id = this.sanitizeId(key);
+        const id = `objekte.${this.sanitizeId(key)}`;
         this.keyIdMap.set(key, id);
         await this.setObjectNotExistsAsync(id, {
           type: "state",
@@ -194,7 +200,8 @@ class GiraEndpointAdapter extends utils.Adapter {
 
         for (const { key, value: val } of entries) {
           const normalized = this.normalizeKey(key);
-          const id = this.keyIdMap.get(normalized) ?? this.sanitizeId(normalized);
+          const id =
+            this.keyIdMap.get(normalized) ?? `objekte.${this.sanitizeId(normalized)}`;
           this.keyIdMap.set(normalized, id);
           let value: any = val;
           let type: ioBroker.StateCommon["type"] = "mixed";
