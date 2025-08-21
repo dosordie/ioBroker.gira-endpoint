@@ -26,7 +26,10 @@
     "keywords": ["gira", "websocket", "smarthome"],
     "license": "MIT",
     "enabled": true,
-    "materialize": true,
+    "materialize": false,
+    "adminUI": {
+      "config": "json"
+    },
     "compact": true,
     "type": "protocols",
     "connectionType": "cloud",
