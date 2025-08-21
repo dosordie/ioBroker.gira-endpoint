@@ -3,7 +3,7 @@ import { GiraClient } from "./lib/GiraClient";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
-type NativeConfig = {
+interface AdapterConfig extends ioBroker.AdapterConfig {
   host?: string;
   port?: number;
   ssl?: boolean;
@@ -18,6 +18,7 @@ type NativeConfig = {
   key?: string;
   rejectUnauthorized?: boolean;
   endpointKeys?: string[] | { key: string }[] | string;
+}
   endpointKeys?: string[] | string;
 };
 
@@ -73,7 +74,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         native: {},
       });
 
-        const cfg = this.config as unknown as NativeConfig;
+        const cfg = this.config as unknown as AdapterConfig;
         const host = String(cfg.host ?? "").trim();
         const port = Number(cfg.port ?? 80);
         const ssl = Boolean(cfg.ssl ?? false);
