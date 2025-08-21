@@ -91,19 +91,23 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       this.client.on("event", async (payload: any) => {
         const data = payload?.data;
-        if (!data || data.uid === undefined) return;
-        const id = this.sanitizeId(String(data.uid));
-        const val = data.value;
-        let type: ioBroker.StateCommon["type"] = "mixed";
-        if (typeof val === "boolean") type = "boolean";
-        else if (typeof val === "number") type = "number";
-        else if (typeof val === "string") type = "string";
-        await this.setObjectNotExistsAsync(id, {
-          type: "state",
-          common: { name: id, type, role: "state", read: true, write: false },
-          native: {},
-        });
-        await this.setStateAsync(id, { val, ack: true });
+        if (!data) return;
+        const items = Array.isArray(data) ? data : [data];
+        for (const item of items) {
+          if (!item || item.uid === undefined) continue;
+          const id = this.sanitizeId(String(item.uid));
+          const val = item.value;
+          let type: ioBroker.StateCommon["type"] = "mixed";
+          if (typeof val === "boolean") type = "boolean";
+          else if (typeof val === "number") type = "number";
+          else if (typeof val === "string") type = "string";
+          await this.setObjectNotExistsAsync(id, {
+            type: "state",
+            common: { name: id, type, role: "state", read: true, write: false },
+            native: {},
+          });
+          await this.setStateAsync(id, { val, ack: true });
+        }
       });
 
       await this.setObjectNotExistsAsync("control", {
