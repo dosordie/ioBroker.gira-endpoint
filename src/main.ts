@@ -103,7 +103,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           else if (typeof val === "string") type = "string";
           await this.setObjectNotExistsAsync(id, {
             type: "state",
-            common: { name: id, type, role: "state", read: true, write: false },
+            common: { name: id, type, role: "state", read: true, write: true },
             native: {},
           });
           await this.setStateAsync(id, { val, ack: true });
@@ -153,18 +153,38 @@ class GiraEndpointAdapter extends utils.Adapter {
   private onStateChange(id: string, state: ioBroker.State | null | undefined): void {
     if (!state || state.ack || !this.client) return;
     const key = id.split(".").pop();
-    const keys = String(state.val || "")
-      .split(/[,;\s]+/)
-      .map((k) => k.trim())
-      .filter((k) => k);
-    if (!keys.length) return;
-    if (key === "subscribe") {
-      this.client.subscribe(keys);
+    if (!key) return;
+    if (key === "subscribe" || key === "unsubscribe") {
+      const keys = String(state.val || "")
+        .split(/[,;\s]+/)
+        .map((k) => k.trim())
+        .filter((k) => k);
+      if (!keys.length) return;
+      if (key === "subscribe") {
+        this.client.subscribe(keys);
+      } else {
+        this.client.unsubscribe(keys);
+      }
       this.setState(id, { val: state.val, ack: true });
-    } else if (key === "unsubscribe") {
-      this.client.unsubscribe(keys);
-      this.setState(id, { val: state.val, ack: true });
+      return;
     }
+
+    let uidValue: any = state.val;
+    let method = "set";
+    if (typeof uidValue === "boolean") {
+      uidValue = uidValue ? "1" : "0";
+    } else if (typeof uidValue === "string") {
+      if (uidValue === "true" || uidValue === "false") {
+        uidValue = uidValue === "true" ? "1" : "0";
+      } else if (uidValue === "toggle") {
+        uidValue = "1";
+        method = "toggle";
+      } else if (isNaN(Number(uidValue))) {
+        uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+      }
+    }
+    this.client.send({ type: "call", param: { key, method, value: uidValue } });
+    this.setState(id, { val: state.val, ack: true });
   }
 }
 
