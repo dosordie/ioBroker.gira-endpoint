@@ -151,17 +151,36 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (!data) return;
 
         const entries: Array<{ key: string; value: any }> = [];
-        if (Array.isArray(data)) {
+
+        // Case 1: subscription result lists multiple items
+        if (typeof data === "object" && Array.isArray((data as any).items)) {
+          for (const item of (data as any).items) {
+            if (!item) continue;
+            const key =
+              item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
+            if (key === undefined) continue;
+            const value = item.data?.value !== undefined ? item.data.value : item.data ?? item.value;
+            entries.push({ key, value });
+          }
+          // Case 2: push event with subscription key
+        } else if (payload?.subscription?.key && typeof data === "object" && "value" in data) {
+          entries.push({ key: String(payload.subscription.key), value: (data as any).value });
+
+          // Case 3: array of events
+        } else if (Array.isArray(data)) {
           for (const item of data) {
             if (!item) continue;
-            const key = item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
+            const key =
+              item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
             if (key === undefined) continue;
             entries.push({ key, value: item.value });
           }
+          // Case 4: object containing key/uid or generic key-value pairs
         } else if (typeof data === "object") {
           if ((data as any).uid !== undefined || (data as any).key !== undefined) {
             const key = (data as any).uid !== undefined ? String((data as any).uid) : String((data as any).key);
-            entries.push({ key, value: (data as any).value });
+            const value = (data as any).data?.value !== undefined ? (data as any).data.value : (data as any).value;
+            entries.push({ key, value });
           } else {
             for (const [key, val] of Object.entries(data)) {
               const value = (val as any)?.value !== undefined ? (val as any).value : val;
