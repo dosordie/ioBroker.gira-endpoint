@@ -28,6 +28,13 @@
       "items": {
         "subscriptionHeader": { "type": "header", "text": "Subscription", "size": 2 },
         "endpointKeys": {
+          "type": "array",
+          "attr": "endpointKeys",
+          "label": "Endpoint-Keys",
+          "items": {
+            "type": "text",
+            "label": "Key"
+          }
           "type": "table",
           "attr": "endpointKeys",
           "label": "Endpoint-Keys",
