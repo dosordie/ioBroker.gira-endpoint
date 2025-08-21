@@ -1,27 +1,41 @@
 {
-  "type": "panel",
+  "type": "tabs",
   "items": {
-    "connectionHeader": { "type": "header", "text": "Gira Endpoint Verbindung", "size": 2 },
-    "host": { "type": "text", "attr": "host", "label": "Host", "placeholder": "192.168.x.y" },
-    "port": { "type": "number", "attr": "port", "label": "Port", "min": 1, "max": 65535 },
-    "ssl": { "type": "checkbox", "attr": "ssl", "label": "TLS (wss://) aktivieren" },
-    "path": { "type": "text", "attr": "path", "label": "Pfad", "placeholder": "/" },
-    "authHeader": { "type": "header", "text": "Authentifizierung (optional)", "size": 2 },
-    "username": { "type": "text", "attr": "username", "label": "Benutzername" },
-    "password": { "type": "password", "attr": "password", "label": "Passwort" },
-    "queryAuth": { "type": "checkbox", "attr": "queryAuth", "label": "Token als Query (?authorization=) nutzen" },
-    "settingsHeader": { "type": "header", "text": "Verbindungseinstellungen", "size": 2 },
-    "pingIntervalMs": { "type": "number", "attr": "pingIntervalMs", "label": "Ping-Intervall (ms)", "min": 0 },
-    "reconnectMinMs": { "type": "number", "attr": "reconnect.minMs", "label": "Reconnect min (ms)", "min": 200 },
-    "reconnectMaxMs": { "type": "number", "attr": "reconnect.maxMs", "label": "Reconnect max (ms)", "min": 1000 },
-    "reconnectFactor": { "type": "number", "attr": "reconnect.factor", "label": "Backoff-Faktor", "min": 1 },
-    "reconnectJitter": { "type": "number", "attr": "reconnect.jitter", "label": "Jitter (0..1)", "min": 0, "max": 1 },
-    "subscriptionHeader": { "type": "header", "text": "Subscription", "size": 2 },
-    "endpointKeys": {
-      "type": "text",
-      "attr": "endpointKeys",
-      "label": "Endpoint-Keys (kommagetrennt)",
-      "placeholder": "key1,key2"
+    "settingsTab": {
+      "type": "panel",
+      "label": "Einstellungen",
+      "items": {
+        "connectionHeader": { "type": "header", "text": "Gira Endpoint Verbindung", "size": 2 },
+        "host": { "type": "text", "attr": "host", "label": "Host", "placeholder": "192.168.x.y" },
+        "port": { "type": "number", "attr": "port", "label": "Port", "min": 1, "max": 65535 },
+        "ssl": { "type": "checkbox", "attr": "ssl", "label": "TLS (wss://) aktivieren" },
+        "path": { "type": "text", "attr": "path", "label": "Pfad", "placeholder": "/" },
+        "authHeader": { "type": "header", "text": "Authentifizierung (optional)", "size": 2 },
+        "username": { "type": "text", "attr": "username", "label": "Benutzername" },
+        "password": { "type": "password", "attr": "password", "label": "Passwort" },
+        "queryAuth": { "type": "checkbox", "attr": "queryAuth", "label": "Token als Query (?authorization=) nutzen" },
+        "settingsHeader": { "type": "header", "text": "Verbindungseinstellungen", "size": 2 },
+        "pingIntervalMs": { "type": "number", "attr": "pingIntervalMs", "label": "Ping-Intervall (ms)", "min": 0 },
+        "reconnectMinMs": { "type": "number", "attr": "reconnect.minMs", "label": "Reconnect min (ms)", "min": 200 },
+        "reconnectMaxMs": { "type": "number", "attr": "reconnect.maxMs", "label": "Reconnect max (ms)", "min": 1000 },
+        "reconnectFactor": { "type": "number", "attr": "reconnect.factor", "label": "Backoff-Faktor", "min": 1 },
+        "reconnectJitter": { "type": "number", "attr": "reconnect.jitter", "label": "Jitter (0..1)", "min": 0, "max": 1 }
+      }
+    },
+    "keysTab": {
+      "type": "panel",
+      "label": "Keys",
+      "items": {
+        "subscriptionHeader": { "type": "header", "text": "Subscription", "size": 2 },
+        "endpointKeys": {
+          "type": "table",
+          "attr": "endpointKeys",
+          "label": "Endpoint-Keys",
+          "items": [
+            { "type": "text", "attr": "key", "label": "Key" }
+          ]
+        }
+      }
     }
   }
 }

@@ -54,7 +54,7 @@
     "cert": "",
     "key": "",
     "rejectUnauthorized": true,
-    "endpointKeys": ""
+    "endpointKeys": []
   },
   "encryptedNative": ["password"],
   "objects": [],
