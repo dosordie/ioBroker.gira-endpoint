@@ -9,6 +9,7 @@
     "authHeader": { "type": "header", "label": "Authentifizierung (optional)" },
     "username": { "type": "text", "attr": "username", "label": "Benutzername" },
     "password": { "type": "password", "attr": "password", "label": "Passwort" },
+    "queryAuth": { "type": "checkbox", "attr": "queryAuth", "label": "Token als Query (?authorization=) nutzen" },
     "settingsHeader": { "type": "header", "label": "Verbindungseinstellungen" },
     "pingIntervalMs": { "type": "number", "attr": "pingIntervalMs", "label": "Ping-Intervall (ms)", "min": 0 },
     "reconnectMinMs": { "type": "number", "attr": "reconnect.minMs", "label": "Reconnect min (ms)", "min": 200 },
