@@ -3,7 +3,7 @@ import { GiraClient } from "./lib/GiraClient";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
-type NativeConfig = {
+interface AdapterConfig extends ioBroker.AdapterConfig {
   host?: string;
   port?: number;
   ssl?: boolean;
@@ -17,8 +17,8 @@ type NativeConfig = {
   cert?: string;
   key?: string;
   rejectUnauthorized?: boolean;
-  endpointKeys?: string;
-};
+  endpointKeys?: string[] | { key: string }[] | string;
+}
 
 class GiraEndpointAdapter extends utils.Adapter {
   private client?: GiraClient;
@@ -72,7 +72,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         native: {},
       });
 
-        const cfg = this.config as unknown as NativeConfig;
+        const cfg = this.config as unknown as AdapterConfig;
         const host = String(cfg.host ?? "").trim();
         const port = Number(cfg.port ?? 80);
         const ssl = Boolean(cfg.ssl ?? false);
@@ -82,11 +82,18 @@ class GiraEndpointAdapter extends utils.Adapter {
       const password = String(cfg.password ?? "");
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
       
-      const endpointKeys = String(cfg.endpointKeys ?? "")
-        .split(/[,;\s]+/)
-        .map((k) => k.trim())
-        .filter((k) => k)
-        .map((k) => this.normalizeKey(k));
+      const rawKeys = cfg.endpointKeys;
+      const endpointKeys = Array.isArray(rawKeys)
+        ? rawKeys
+            .map((k) => (typeof k === "object" && k ? (k as any).key : k))
+            .map((k) => String(k).trim())
+            .filter((k) => k)
+            .map((k) => this.normalizeKey(k))
+        : String(rawKeys ?? "")
+            .split(/[,;\s]+/)
+            .map((k) => k.trim())
+            .filter((k) => k)
+            .map((k) => this.normalizeKey(k));
       this.endpointKeys = endpointKeys;
 
       this.log.info(
