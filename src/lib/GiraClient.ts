@@ -75,6 +75,28 @@ export class GiraClient extends EventEmitter {
         try { payload = JSON.parse(text); } catch {
           payload = { raw: text };
         }
+
+        // payload.data.value prüfen und ggf. konvertieren
+        const val = payload?.data?.value;
+        if (val !== undefined) {
+          let v: any = val;
+          if (typeof v === "string") {
+            const num = Number(v);
+            if (!isNaN(num)) {
+              v = num;
+            } else {
+              try {
+                v = Buffer.from(v, "base64").toString("utf8");
+              } catch {
+                // ignorieren, wenn keine gültige Base64
+              }
+            }
+          }
+          if (v === 1 || v === "1") v = true;
+          else if (v === 0 || v === "0") v = false;
+          payload.data.value = v;
+        }
+
         this.emit("event", payload);
       } catch (err) {
         this.emit("error", err);
