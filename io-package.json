@@ -48,7 +48,8 @@
       "maxMs": 30000,
       "factor": 1.7,
       "jitter": 0.2
-    }
+    },
+    "endpointKeys": ""
   },
   "encryptedNative": ["password"],
   "objects": [],
