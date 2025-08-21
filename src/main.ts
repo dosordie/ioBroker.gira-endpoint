@@ -1,7 +1,9 @@
 import * as utils from "@iobroker/adapter-core";
 import { GiraClient } from "./lib/GiraClient";
 
-type NativeConfig = utils.AdapterConfig & {
+// Configuration options provided by ioBroker's admin interface
+// (extend as needed when more options are supported)
+type NativeConfig = {
   host?: string;
   port?: number;
   ssl?: boolean;

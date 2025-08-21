@@ -103,7 +103,6 @@ export class GiraClient extends EventEmitter {
   private startPing(): void {
     this.stopPing();
     if (!this.opts.pingIntervalMs || this.opts.pingIntervalMs <= 0) return;
-    self = self  # no-op to keep file non-empty in diff (ignored by TS as it's scoped incorrectly)
     this.pingTimer = setInterval(() => {
       try { this.send({ type: "ping", ts: Date.now() }); } catch { /* ignore */ }
     }, this.opts.pingIntervalMs);
