@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import WebSocket from "ws";
+import { HttpsProxyAgent } from "https-proxy-agent";
 
 // Kein Listener-Limit (verhindert MaxListeners-Warnungen global hier)
 EventEmitter.defaultMaxListeners = 0;
@@ -14,6 +15,12 @@ export interface GiraClientOptions {
   pingIntervalMs?: number;
   reconnect?: {
     minMs: number; maxMs: number; factor: number; jitter: number;
+  };
+  tls?: {
+    ca?: string | Buffer | Array<string | Buffer>;
+    cert?: string | Buffer;
+    key?: string | Buffer;
+    rejectUnauthorized?: boolean;
   };
 }
 
@@ -36,6 +43,7 @@ export class GiraClient extends EventEmitter {
       password: "",
       pingIntervalMs: 30000,
       reconnect: { minMs: 1000, maxMs: 30000, factor: 1.7, jitter: 0.2 },
+      tls: {},
     };
     this.opts = Object.assign({}, defaults, opts);
     this.backoffMs = this.opts.reconnect.minMs;
@@ -53,7 +61,11 @@ export class GiraClient extends EventEmitter {
       headers["Authorization"] = `Basic ${token}`;
     }
 
-    this.ws = new WebSocket(url, { headers });
+    const wsOpts: WebSocket.ClientOptions = { headers, ...this.opts.tls };
+    const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    if (proxy) wsOpts.agent = new HttpsProxyAgent(proxy);
+
+    this.ws = new WebSocket(url, wsOpts);
 
     this.ws.on("open", () => {
       this.emit("open");
