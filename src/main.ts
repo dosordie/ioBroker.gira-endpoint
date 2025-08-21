@@ -12,6 +12,10 @@ type NativeConfig = {
   password?: string;
   pingIntervalMs?: number;
   reconnect?: { minMs?: number; maxMs?: number; factor?: number; jitter?: number };
+  ca?: string;
+  cert?: string;
+  key?: string;
+  rejectUnauthorized?: boolean;
 };
 
 class GiraEndpointAdapter extends utils.Adapter {
@@ -39,7 +43,13 @@ class GiraEndpointAdapter extends utils.Adapter {
       const password = String(cfg.password ?? "");
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
 
-      this.client = new GiraClient({ host, port, ssl, path, username, password, pingIntervalMs });
+      const ca = cfg.ca ? String(cfg.ca) : undefined;
+      const cert = cfg.cert ? String(cfg.cert) : undefined;
+      const key = cfg.key ? String(cfg.key) : undefined;
+      const rejectUnauthorized = cfg.rejectUnauthorized !== undefined ? Boolean(cfg.rejectUnauthorized) : undefined;
+      const tls = { ca, cert, key, rejectUnauthorized };
+
+      this.client = new GiraClient({ host, port, ssl, path, username, password, pingIntervalMs, tls });
 
       this.client.on("open", () => {
         this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);

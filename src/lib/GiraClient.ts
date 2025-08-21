@@ -15,6 +15,12 @@ export interface GiraClientOptions {
   reconnect?: {
     minMs: number; maxMs: number; factor: number; jitter: number;
   };
+  tls?: {
+    ca?: string | Buffer | Array<string | Buffer>;
+    cert?: string | Buffer;
+    key?: string | Buffer;
+    rejectUnauthorized?: boolean;
+  };
 }
 
 export class GiraClient extends EventEmitter {
@@ -36,6 +42,7 @@ export class GiraClient extends EventEmitter {
       password: "",
       pingIntervalMs: 30000,
       reconnect: { minMs: 1000, maxMs: 30000, factor: 1.7, jitter: 0.2 },
+      tls: {},
     };
     this.opts = Object.assign({}, defaults, opts);
     this.backoffMs = this.opts.reconnect.minMs;
@@ -53,7 +60,19 @@ export class GiraClient extends EventEmitter {
       headers["Authorization"] = `Basic ${token}`;
     }
 
-    this.ws = new WebSocket(url, { headers });
+    const wsOpts: WebSocket.ClientOptions = { headers, ...this.opts.tls };
+    const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    if (proxy) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const HttpsProxyAgent = require("https-proxy-agent");
+        wsOpts.agent = new HttpsProxyAgent(proxy);
+      } catch (err) {
+        this.emit("error", err);
+      }
+    }
+
+    this.ws = new WebSocket(url, wsOpts);
 
     this.ws.on("open", () => {
       this.emit("open");
