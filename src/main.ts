@@ -36,7 +36,34 @@ class GiraEndpointAdapter extends utils.Adapter {
 
   private async onReady(): Promise<void> {
     try {
+      await this.setObjectNotExistsAsync("info", {
+        type: "channel",
+        common: { name: "Info" },
+        native: {},
+      });
+      await this.setObjectNotExistsAsync("info.connection", {
+        type: "state",
+        common: {
+          name: "Connection",
+          type: "boolean",
+          role: "indicator.connected",
+          read: true,
+          write: false,
+        },
+        native: {},
+      });
+      await this.setObjectNotExistsAsync("info.lastError", {
+        type: "state",
+        common: { name: "Last error", type: "string", role: "text", read: true, write: false },
+        native: {},
+      });
+      await this.setObjectNotExistsAsync("info.lastEvent", {
+        type: "state",
+        common: { name: "Last event", type: "string", role: "json", read: true, write: false },
+        native: {},
+      });
       await this.setStateAsync("info.connection", { val: false, ack: true });
+      this.log.debug("Pre-created info states");
 
       const cfg = this.config as unknown as NativeConfig;
       const host = String(cfg.host ?? "").trim();
@@ -62,6 +89,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           common: { name: id, type: "mixed", role: "state", read: true, write: true },
           native: {},
         });
+        this.log.debug(`Pre-created endpoint state ${id}`);
         this.subscribeStates(id);
       }
 
@@ -145,6 +173,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         common: { name: "Unsubscribe keys", type: "string", role: "state", read: false, write: true },
         native: {},
       });
+      this.log.debug("Created control states");
       this.subscribeStates("control.subscribe");
       this.subscribeStates("control.unsubscribe");
 
