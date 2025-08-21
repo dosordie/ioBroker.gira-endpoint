@@ -57,18 +57,20 @@ class GiraEndpointAdapter extends utils.Adapter {
       });
 
       this.client.on("event", async (payload: any) => {
-        // TODO: Mapping auf echte Gira-Events
-        await this.setStateAsync("info.lastEvent", { val: JSON.stringify(payload), ack: true });
-        // Beispiel: wenn payload {topic:"sensor/xyz", value:123}
-        if (payload && payload.topic) {
-          const id = this.sanitizeId(String(payload.topic));
-          await this.setObjectNotExistsAsync(id, {
-            type: "state",
-            common: { name: id, type: "mixed", role: "state", read: true, write: false },
-            native: {},
-          });
-          await this.setStateAsync(id, { val: payload.value ?? payload, ack: true });
-        }
+        const data = payload?.data;
+        if (!data || data.uid === undefined) return;
+        const id = this.sanitizeId(String(data.uid));
+        const val = data.value;
+        let type: ioBroker.StateCommon["type"] = "mixed";
+        if (typeof val === "boolean") type = "boolean";
+        else if (typeof val === "number") type = "number";
+        else if (typeof val === "string") type = "string";
+        await this.setObjectNotExistsAsync(id, {
+          type: "state",
+          common: { name: id, type, role: "state", read: true, write: false },
+          native: {},
+        });
+        await this.setStateAsync(id, { val, ack: true });
       });
 
       this.client.connect();
