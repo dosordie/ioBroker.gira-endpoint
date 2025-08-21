@@ -23,6 +23,7 @@ type NativeConfig = {
 class GiraEndpointAdapter extends utils.Adapter {
   private client?: GiraClient;
   private endpointKeys: string[] = [];
+  private keyIdMap = new Map<string, string>();
 
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
@@ -90,9 +91,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       // Pre-create configured endpoint states so they appear immediately in ioBroker
       for (const key of this.endpointKeys) {
         const id = this.sanitizeId(key);
+        this.keyIdMap.set(key.toUpperCase(), id);
         await this.setObjectNotExistsAsync(id, {
           type: "state",
-          common: { name: id, type: "mixed", role: "state", read: true, write: true },
+          common: { name: key, type: "mixed", role: "state", read: true, write: true },
           native: {},
         });
         this.log.debug(`Pre-created endpoint state ${id}`);
@@ -122,7 +124,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);
         this.setState("info.connection", true, true);
         if (this.endpointKeys.length) {
-          this.client!.subscribe(this.endpointKeys);
+          this.client!.subscribe(this.endpointKeys.map((k) => k.toUpperCase()));
         } else {
           this.log.info("Subscribing to all endpoint events (no keys configured)");
           this.client!.subscribe([]);
@@ -190,14 +192,16 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
 
         for (const { key, value: val } of entries) {
-          const id = this.sanitizeId(key);
+          const lookup = key.toUpperCase();
+          const id = this.keyIdMap.get(lookup) ?? this.sanitizeId(key);
+          this.keyIdMap.set(lookup, id);
           let type: ioBroker.StateCommon["type"] = "mixed";
           if (typeof val === "boolean") type = "boolean";
           else if (typeof val === "number") type = "number";
           else if (typeof val === "string") type = "string";
           await this.setObjectNotExistsAsync(id, {
             type: "state",
-            common: { name: id, type, role: "state", read: true, write: true },
+            common: { name: key, type, role: "state", read: true, write: true },
             native: {},
           });
           this.subscribeStates(id);
@@ -257,10 +261,11 @@ class GiraEndpointAdapter extends utils.Adapter {
         .map((k) => k.trim().toUpperCase())
         .filter((k) => k);
       if (!keys.length) return;
+      const normalized = keys.map((k) => k.toUpperCase());
       if (key === "subscribe") {
-        this.client.subscribe(keys);
+        this.client.subscribe(normalized);
       } else {
-        this.client.unsubscribe(keys);
+        this.client.unsubscribe(normalized);
       }
       this.setState(id, { val: state.val, ack: true });
       return;
