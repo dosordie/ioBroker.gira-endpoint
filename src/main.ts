@@ -17,6 +17,7 @@ type NativeConfig = {
   cert?: string;
   key?: string;
   rejectUnauthorized?: boolean;
+  endpointKeys?: string[] | { key: string }[] | string;
   endpointKeys?: string[] | string;
 };
 
@@ -85,6 +86,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       const rawKeys = cfg.endpointKeys;
       const endpointKeys = Array.isArray(rawKeys)
         ? rawKeys
+            .map((k) => (typeof k === "object" && k ? (k as any).key : k))
             .map((k) => String(k).trim())
             .filter((k) => k)
             .map((k) => this.normalizeKey(k))
