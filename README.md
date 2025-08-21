@@ -19,7 +19,6 @@ iobroker upload gira-endpoint
 ## optional hinzufügen
 #iobroker add gira-endpoint
 
-```
 
 Variante B: per npm link (für Dev bequem)
 # im Projektordner
@@ -38,6 +37,8 @@ npm i -g @iobroker/dev-server
 cd ~/iobroker.gira-endpoint
 dev-server setup
 dev-server watch
+
+```
 
 Danach Instanz in Admin öffnen und Verbindung einstellen (Host/Port/Path/TLS/Benutzer).
 
