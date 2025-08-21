@@ -1,19 +1,19 @@
 {
   "type": "panel",
-  "items": [
-    {"type": "header", "text": "Gira Endpoint Verbindung"},
-    {"type": "text", "attr": "host", "title": "Host", "placeholder": "192.168.x.y"},
-    {"type": "number", "attr": "port", "title": "Port", "min": 1, "max": 65535},
-    {"type": "checkbox", "attr": "ssl", "title": "TLS (wss://) aktivieren"},
-    {"type": "text", "attr": "path", "title": "Pfad", "placeholder": "/"},
-    {"type": "header", "text": "Authentifizierung (optional)"},
-    {"type": "text", "attr": "username", "title": "Benutzername"},
-    {"type": "password", "attr": "password", "title": "Passwort"},
-    {"type": "header", "text": "Verbindungseinstellungen"},
-    {"type": "number", "attr": "pingIntervalMs", "title": "Ping-Intervall (ms)", "min": 0},
-    {"type": "number", "attr": "reconnect.minMs", "title": "Reconnect min (ms)", "min": 200},
-    {"type": "number", "attr": "reconnect.maxMs", "title": "Reconnect max (ms)", "min": 1000},
-    {"type": "number", "attr": "reconnect.factor", "title": "Backoff-Faktor", "min": 1},
-    {"type": "number", "attr": "reconnect.jitter", "title": "Jitter (0..1)", "min": 0, "max": 1}
-  ]
+  "items": {
+    "connectionHeader": { "type": "header", "label": "Gira Endpoint Verbindung" },
+    "host": { "type": "text", "attr": "host", "label": "Host", "placeholder": "192.168.x.y" },
+    "port": { "type": "number", "attr": "port", "label": "Port", "min": 1, "max": 65535 },
+    "ssl": { "type": "checkbox", "attr": "ssl", "label": "TLS (wss://) aktivieren" },
+    "path": { "type": "text", "attr": "path", "label": "Pfad", "placeholder": "/" },
+    "authHeader": { "type": "header", "label": "Authentifizierung (optional)" },
+    "username": { "type": "text", "attr": "username", "label": "Benutzername" },
+    "password": { "type": "password", "attr": "password", "label": "Passwort" },
+    "settingsHeader": { "type": "header", "label": "Verbindungseinstellungen" },
+    "pingIntervalMs": { "type": "number", "attr": "pingIntervalMs", "label": "Ping-Intervall (ms)", "min": 0 },
+    "reconnectMinMs": { "type": "number", "attr": "reconnect.minMs", "label": "Reconnect min (ms)", "min": 200 },
+    "reconnectMaxMs": { "type": "number", "attr": "reconnect.maxMs", "label": "Reconnect max (ms)", "min": 1000 },
+    "reconnectFactor": { "type": "number", "attr": "reconnect.factor", "label": "Backoff-Faktor", "min": 1 },
+    "reconnectJitter": { "type": "number", "attr": "reconnect.jitter", "label": "Jitter (0..1)", "min": 0, "max": 1 }
+  }
 }
