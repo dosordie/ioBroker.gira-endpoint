@@ -1,7 +1,3 @@
-cd /home/dominik/iobroker.gira-endpoint
-cp io-package.json io-package.json.bak
-
-cat > io-package.json <<'JSON'
 {
   "common": {
     "name": "gira-endpoint",
