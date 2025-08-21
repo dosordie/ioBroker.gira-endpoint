@@ -34,6 +34,10 @@
           "items": [
             { "type": "text", "attr": "key", "label": "Key" }
           ]
+          "type": "array",
+          "attr": "endpointKeys",
+          "label": "Endpoint-Keys",
+          "items": { "type": "text", "label": "Key" }
         }
       }
     }
