@@ -2,6 +2,9 @@
 
 Minimaler Gira-Endpoint-Adapter (WS/WSS-Client). Reconnect mit Backoff, Events → States, kein MaxListeners-Warnspam.
 
+Basis:
+https://github.com/luckyy0815/node-red-contrib-gira-endpoint
+
 ## Installation (lokal)
 
 ```bash
