@@ -1,0 +1,25 @@
+{
+  "name": "iobroker.gira-endpoint",
+  "version": "0.0.1",
+  "description": "ioBroker adapter for Gira endpoint (WS/WSS) – emits events as states, minimal viable replacement for Node-RED gira node",
+  "author": "you",
+  "license": "MIT",
+  "main": "build/main.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "start": "node build/main.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@iobroker/adapter-core": "^3.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.5.4"
+  }
+}

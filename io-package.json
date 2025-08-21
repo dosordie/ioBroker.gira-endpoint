@@ -1,0 +1,97 @@
+{
+  "common": {
+    "name": "gira-endpoint",
+    "version": "0.0.1",
+    "news": {
+      "0.0.1": {
+        "en": "Initial version (WS client, reconnect, basic event mapping)",
+        "de": "Erste Version (WS-Client, Reconnect, Basis-Event-Mapping)"
+      }
+    },
+    "title": "Gira Endpoint",
+    "titleLang": {
+      "en": "Gira Endpoint",
+      "de": "Gira Endpoint"
+    },
+    "desc": {
+      "en": "Connects to Gira endpoint via WebSocket and exposes events as ioBroker states.",
+      "de": "Verbindet sich per WebSocket mit einem Gira-Endpoint und stellt Events als ioBroker-States bereit."
+    },
+    "platform": "Javascript/Node.js",
+    "mode": "daemon",
+    "icon": "",
+    "authors": [
+      "you"
+    ],
+    "keywords": ["gira", "websocket", "smarthome"],
+    "license": "MIT",
+    "enabled": true,
+    "materialize": true,
+    "compact": true,
+    "type": "protocols",
+    "connectionType": "cloud",
+    "dataSource": "push"
+  },
+  "native": {
+    "host": "127.0.0.1",
+    "port": 80,
+    "ssl": false,
+    "path": "/",
+    "username": "",
+    "password": "",
+    "pingIntervalMs": 30000,
+    "reconnect": {
+      "minMs": 1000,
+      "maxMs": 30000,
+      "factor": 1.7,
+      "jitter": 0.2
+    }
+  },
+  "encryptedNative": ["password"],
+  "objects": [],
+  "instanceObjects": [
+    {
+      "_id": "info",
+      "type": "channel",
+      "common": {"name": "Information"},
+      "native": {}
+    },
+    {
+      "_id": "info.connection",
+      "type": "state",
+      "common": {
+        "name": "Connection",
+        "type": "boolean",
+        "role": "indicator.reachable",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "info.lastEvent",
+      "type": "state",
+      "common": {
+        "name": "Last raw event",
+        "type": "string",
+        "role": "json",
+        "read": true,
+        "write": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "info.lastError",
+      "type": "state",
+      "common": {
+        "name": "Last error",
+        "type": "string",
+        "role": "text",
+        "read": true,
+        "write": false
+      },
+      "native": {}
+    }
+  ]
+}
