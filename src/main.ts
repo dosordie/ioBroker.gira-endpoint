@@ -57,20 +57,28 @@ class GiraEndpointAdapter extends utils.Adapter {
         common: { name: "Last error", type: "string", role: "text", read: true, write: false },
         native: {},
       });
-      await this.setObjectNotExistsAsync("info.lastEvent", {
-        type: "state",
-        common: { name: "Last event", type: "string", role: "json", read: true, write: false },
-        native: {},
-      });
-      await this.setStateAsync("info.connection", { val: false, ack: true });
-      this.log.debug("Pre-created info states");
+        await this.setObjectNotExistsAsync("info.lastEvent", {
+          type: "state",
+          common: { name: "Last event", type: "string", role: "json", read: true, write: false },
+          native: {},
+        });
+        await this.setStateAsync("info.connection", { val: false, ack: true });
+        this.log.debug("Pre-created info states");
 
-      const cfg = this.config as unknown as NativeConfig;
-      const host = String(cfg.host ?? "").trim();
-      const port = Number(cfg.port ?? 80);
-      const ssl = Boolean(cfg.ssl ?? false);
-      const queryAuth = Boolean(cfg.queryAuth ?? false);
-      const path = queryAuth ? "/endpoints/ws" : String(cfg.path ?? "/").trim() || "/";
+        // Create a simple test object to verify object handling
+        await this.setObjectNotExistsAsync("test", {
+          type: "state",
+          common: { name: "Test", type: "string", role: "state", read: true, write: false },
+          native: {},
+        });
+        await this.setStateAsync("test", { val: "hardcoded", ack: true });
+
+        const cfg = this.config as unknown as NativeConfig;
+        const host = String(cfg.host ?? "").trim();
+        const port = Number(cfg.port ?? 80);
+        const ssl = Boolean(cfg.ssl ?? false);
+        const queryAuth = Boolean(cfg.queryAuth ?? false);
+        const path = queryAuth ? "/endpoints/ws" : String(cfg.path ?? "/").trim() || "/";
       const username = String(cfg.username ?? "");
       const password = String(cfg.password ?? "");
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
