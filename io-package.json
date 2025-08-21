@@ -1,3 +1,7 @@
+cd /home/dominik/iobroker.gira-endpoint
+cp io-package.json io-package.json.bak
+
+cat > io-package.json <<'JSON'
 {
   "common": {
     "name": "gira-endpoint",
@@ -24,16 +28,12 @@
     "platform": "Javascript/Node.js",
     "mode": "daemon",
     "icon": "gira-endpoint.svg",
-    "authors": [
-      "you"
-    ],
+    "authors": ["you"],
     "keywords": ["gira", "websocket", "smarthome"],
     "license": "MIT",
     "enabled": true,
     "materialize": false,
-    "adminUI": {
-      "config": "json"
-    },
+    "adminUI": { "config": "json" },
     "compact": true,
     "type": "protocols",
     "connectionType": "cloud",
@@ -66,7 +66,7 @@
     {
       "_id": "info",
       "type": "channel",
-      "common": {"name": "Information"},
+      "common": { "name": "Information" },
       "native": {}
     },
     {
@@ -98,4 +98,14 @@
       "_id": "info.lastError",
       "type": "state",
       "common": {
-        "name": "Last error"
+        "name": "Last error",
+        "type": "string",
+        "role": "text",
+        "read": true,
+        "write": false
+      },
+      "native": {}
+    }
+  ]
+}
+JSON
