@@ -94,28 +94,7 @@ export class GiraClient extends EventEmitter {
         try { payload = JSON.parse(text); } catch {
           payload = { raw: text };
         }
-
-        // payload.data.value prüfen und ggf. konvertieren
-        const val = payload?.data?.value;
-        if (val !== undefined) {
-          let v: any = val;
-          if (typeof v === "string") {
-            const num = Number(v);
-            if (!isNaN(num)) {
-              v = num;
-            } else {
-              try {
-                v = Buffer.from(v, "base64").toString("utf8");
-              } catch {
-                // ignorieren, wenn keine gültige Base64
-              }
-            }
-          }
-          if (v === 1 || v === "1") v = true;
-          else if (v === 0 || v === "0") v = false;
-          payload.data.value = v;
-        }
-
+        this.normalizeData(payload?.data);
         this.emit("event", payload);
       } catch (err) {
         this.emit("error", err);
@@ -153,6 +132,38 @@ export class GiraClient extends EventEmitter {
     this.closedByUser = true;
     this.stopPing();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.close();
+  }
+
+  private normalizeValue(v: any): any {
+    if (typeof v === "string") {
+      const num = Number(v);
+      if (!isNaN(num)) {
+        v = num;
+      } else {
+        try {
+          v = Buffer.from(v, "base64").toString("utf8");
+        } catch {
+          // ignorieren, wenn keine gültige Base64
+        }
+      }
+    }
+    if (v === 1 || v === "1") v = true;
+    else if (v === 0 || v === "0") v = false;
+    return v;
+  }
+
+  private normalizeData(obj: any): void {
+    if (!obj || typeof obj !== "object") return;
+    if (Array.isArray(obj)) {
+      for (const item of obj) this.normalizeData(item);
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(obj, "value")) {
+      obj.value = this.normalizeValue(obj.value);
+    }
+    for (const key of Object.keys(obj)) {
+      this.normalizeData(obj[key]);
+    }
   }
 
   private startPing(): void {
