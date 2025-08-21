@@ -149,11 +149,29 @@ class GiraEndpointAdapter extends utils.Adapter {
 
         const data = payload?.data;
         if (!data) return;
-        const items = Array.isArray(data) ? data : [data];
-        for (const item of items) {
-          if (!item || item.uid === undefined) continue;
-          const id = this.sanitizeId(String(item.uid));
-          const val = item.value;
+
+        const entries: Array<{ key: string; value: any }> = [];
+        if (Array.isArray(data)) {
+          for (const item of data) {
+            if (!item) continue;
+            const key = item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
+            if (key === undefined) continue;
+            entries.push({ key, value: item.value });
+          }
+        } else if (typeof data === "object") {
+          if ((data as any).uid !== undefined || (data as any).key !== undefined) {
+            const key = (data as any).uid !== undefined ? String((data as any).uid) : String((data as any).key);
+            entries.push({ key, value: (data as any).value });
+          } else {
+            for (const [key, val] of Object.entries(data)) {
+              const value = (val as any)?.value !== undefined ? (val as any).value : val;
+              entries.push({ key, value });
+            }
+          }
+        }
+
+        for (const { key, value: val } of entries) {
+          const id = this.sanitizeId(key);
           let type: ioBroker.StateCommon["type"] = "mixed";
           if (typeof val === "boolean") type = "boolean";
           else if (typeof val === "number") type = "number";
