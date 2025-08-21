@@ -196,18 +196,21 @@ class GiraEndpointAdapter extends utils.Adapter {
           const normalized = this.normalizeKey(key);
           const id = this.keyIdMap.get(normalized) ?? this.sanitizeId(normalized);
           this.keyIdMap.set(normalized, id);
+          let value: any = val;
           let type: ioBroker.StateCommon["type"] = "mixed";
-          if (typeof val === "boolean") type = "boolean";
-          else if (typeof val === "number") type = "number";
+          if (typeof val === "boolean") {
+            type = "number";
+            value = val ? 1 : 0;
+          } else if (typeof val === "number") type = "number";
           else if (typeof val === "string") type = "string";
-          await this.setObjectNotExistsAsync(id, {
+          await this.extendObjectAsync(id, {
             type: "state",
             common: { name: normalized, type, role: "state", read: true, write: true },
             native: {},
           });
           this.subscribeStates(id);
-          this.log.debug(`Updating state ${id} -> ${JSON.stringify(val)}`);
-          await this.setStateAsync(id, { val, ack: true });
+          this.log.debug(`Updating state ${id} -> ${JSON.stringify(value)}`);
+          await this.setStateAsync(id, { val: value, ack: true });
         }
       });
 
@@ -279,10 +282,13 @@ class GiraEndpointAdapter extends utils.Adapter {
 
     let uidValue: any = state.val;
     let method = "set";
+    let ackVal: any = state.val;
     if (typeof uidValue === "boolean") {
+      ackVal = uidValue ? 1 : 0;
       uidValue = uidValue ? "1" : "0";
     } else if (typeof uidValue === "string") {
       if (uidValue === "true" || uidValue === "false") {
+        ackVal = uidValue === "true" ? 1 : 0;
         uidValue = uidValue === "true" ? "1" : "0";
       } else if (uidValue === "toggle") {
         uidValue = "1";
@@ -292,7 +298,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
     }
     this.client.send({ type: "call", param: { key, method, value: uidValue } });
-    this.setState(id, { val: state.val, ack: true });
+    this.setState(id, { val: ackVal, ack: true });
   }
 }
 
