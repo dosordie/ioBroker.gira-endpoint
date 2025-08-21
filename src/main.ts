@@ -18,6 +18,7 @@ type NativeConfig = {
   key?: string;
   rejectUnauthorized?: boolean;
   endpointKeys?: string[] | { key: string }[] | string;
+  endpointKeys?: string[] | string;
 };
 
 class GiraEndpointAdapter extends utils.Adapter {
