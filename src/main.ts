@@ -54,6 +54,17 @@ class GiraEndpointAdapter extends utils.Adapter {
         .filter((k) => k);
       this.endpointKeys = endpointKeys;
 
+      // Pre-create configured endpoint states so they appear immediately in ioBroker
+      for (const key of this.endpointKeys) {
+        const id = this.sanitizeId(key);
+        await this.setObjectNotExistsAsync(id, {
+          type: "state",
+          common: { name: id, type: "mixed", role: "state", read: true, write: true },
+          native: {},
+        });
+        this.subscribeStates(id);
+      }
+
       const ca = cfg.ca ? String(cfg.ca) : undefined;
       const cert = cfg.cert ? String(cfg.cert) : undefined;
       const key = cfg.key ? String(cfg.key) : undefined;
@@ -106,6 +117,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             common: { name: id, type, role: "state", read: true, write: true },
             native: {},
           });
+          this.subscribeStates(id);
           await this.setStateAsync(id, { val, ack: true });
         }
       });
