@@ -81,6 +81,12 @@ class GiraEndpointAdapter extends utils.Adapter {
         .filter((k) => k);
       this.endpointKeys = endpointKeys;
 
+      this.log.info(
+        `Configured endpoint keys: ${
+          this.endpointKeys.length ? this.endpointKeys.join(", ") : "(none)"
+        }`
+      );
+
       // Pre-create configured endpoint states so they appear immediately in ioBroker
       for (const key of this.endpointKeys) {
         const id = this.sanitizeId(key);
@@ -115,7 +121,12 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.client.on("open", () => {
         this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);
         this.setState("info.connection", true, true);
-        if (this.endpointKeys.length) this.client!.subscribe(this.endpointKeys);
+        if (this.endpointKeys.length) {
+          this.client!.subscribe(this.endpointKeys);
+        } else {
+          this.log.info("Subscribing to all endpoint events (no keys configured)");
+          this.client!.subscribe([]);
+        }
       });
 
       this.client.on("close", (info: any) => {
