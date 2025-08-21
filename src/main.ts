@@ -78,8 +78,9 @@ class GiraEndpointAdapter extends utils.Adapter {
       
       const endpointKeys = String(cfg.endpointKeys ?? "")
         .split(/[,;\s]+/)
-        .map((k) => k.trim().toUpperCase())
-        .filter((k) => k);
+        .map((k) => k.trim())
+        .filter((k) => k)
+        .map((k) => this.normalizeKey(k));
       this.endpointKeys = endpointKeys;
 
       this.log.info(
@@ -235,6 +236,11 @@ class GiraEndpointAdapter extends utils.Adapter {
     }
   }
 
+  private normalizeKey(k: string): string {
+    k = k.trim().toUpperCase();
+    return k.startsWith("CO@") ? k : `CO@${k}`;
+  }
+
   private sanitizeId(s: string): string {
     return s.replace(/[^a-z0-9@_\-\.]/gi, "_");
     return s.replace(/[^a-z0-9_\-\.]/gi, "_").toUpperCase();
@@ -259,14 +265,14 @@ class GiraEndpointAdapter extends utils.Adapter {
     if (key === "subscribe" || key === "unsubscribe") {
       const keys = String(state.val || "")
         .split(/[,;\s]+/)
-        .map((k) => k.trim().toUpperCase())
-        .filter((k) => k);
+        .map((k) => k.trim())
+        .filter((k) => k)
+        .map((k) => this.normalizeKey(k));
       if (!keys.length) return;
-      const normalized = keys.map((k) => k.toUpperCase());
       if (key === "subscribe") {
-        this.client.subscribe(normalized);
+        this.client.subscribe(keys);
       } else {
-        this.client.unsubscribe(normalized);
+        this.client.unsubscribe(keys);
       }
       this.setState(id, { val: state.val, ack: true });
       return;
