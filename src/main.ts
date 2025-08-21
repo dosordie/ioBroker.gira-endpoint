@@ -31,10 +31,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       await this.setStateAsync("info.connection", { val: false, ack: true });
 
       const cfg = this.config as unknown as NativeConfig;
-      const host = String(cfg.host ?? "");
+      const host = String(cfg.host ?? "").trim();
       const port = Number(cfg.port ?? 80);
       const ssl = Boolean(cfg.ssl ?? false);
-      const path = String(cfg.path ?? "/");
+      const path = String(cfg.path ?? "/").trim() || "/";
       const username = String(cfg.username ?? "");
       const password = String(cfg.password ?? "");
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
