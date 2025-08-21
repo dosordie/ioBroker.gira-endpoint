@@ -66,10 +66,15 @@ export class GiraClient extends EventEmitter {
         const text = typeof data === "string" ? data : data.toString("utf8");
         // Gira-Event-Format: hier anpassen. Wir nehmen zunächst JSON an.
         let payload: any;
-        try { payload = JSON.parse(text); } catch {
+        try {
+          payload = JSON.parse(text);
+        } catch {
           payload = { raw: text };
         }
         this.emit("event", payload);
+        if (payload && payload.type === "request") {
+          this.emit("request", payload);
+        }
       } catch (err) {
         this.emit("error", err);
       }

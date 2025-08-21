@@ -71,6 +71,11 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
       });
 
+      this.client.on("request", async (payload: any) => {
+        this.log.debug(`Incoming request: ${JSON.stringify(payload)}`);
+        await this.setStateAsync("info.lastRequest", { val: JSON.stringify(payload), ack: true });
+      });
+
       this.client.connect();
     } catch (e: any) {
       this.log.error(`onReady failed: ${e?.message || e}`);
