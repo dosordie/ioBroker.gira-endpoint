@@ -8,6 +8,7 @@ Minimaler Gira-Endpoint-Adapter (WS/WSS-Client). Reconnect mit Backoff, Events â
 Variante A (empfohlen): per Tarball installieren *geht*
 # im Projektordner
 cd ~/iobroker.gira-endpoint
+git pull --ff-only
 npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.0.1.tgz
 
 # ins ioBroker-Verzeichnis und dort installieren (als iobroker-User)
