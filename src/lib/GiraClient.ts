@@ -94,6 +94,14 @@ export class GiraClient extends EventEmitter {
     }
   }
 
+  public subscribe(keys: string[]): void {
+    this.send({ type: "subscribe", param: { keys } });
+  }
+
+  public unsubscribe(keys: string[]): void {
+    this.send({ type: "unsubscribe", param: { keys } });
+  }
+
   public close(): void {
     this.closedByUser = true;
     this.stopPing();
