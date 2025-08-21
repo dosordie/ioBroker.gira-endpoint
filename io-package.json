@@ -19,7 +19,7 @@
     },
     "platform": "Javascript/Node.js",
     "mode": "daemon",
-    "icon": "",
+    "icon": "gira-endpoint.svg",
     "authors": [
       "you"
     ],
