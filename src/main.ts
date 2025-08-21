@@ -65,14 +65,6 @@ class GiraEndpointAdapter extends utils.Adapter {
         await this.setStateAsync("info.connection", { val: false, ack: true });
         this.log.debug("Pre-created info states");
 
-        // Create a simple test object to verify object handling
-        await this.setObjectNotExistsAsync("test", {
-          type: "state",
-          common: { name: "Test", type: "string", role: "state", read: true, write: false },
-          native: {},
-        });
-        await this.setStateAsync("test", { val: "hardcoded", ack: true });
-
         const cfg = this.config as unknown as NativeConfig;
         const host = String(cfg.host ?? "").trim();
         const port = Number(cfg.port ?? 80);
