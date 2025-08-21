@@ -5,14 +5,39 @@ Minimaler Gira-Endpoint-Adapter (WS/WSS-Client). Reconnect mit Backoff, Events �
 ## Installation (lokal)
 
 ```bash
-cd iobroker.gira-endpoint
-npm install
-npm run build
-# Variante A: lokale Quelle hinzufügen
-iobroker add ./
-# oder, falls bereits als Adaptername erkannt:
-# iobroker upload gira-endpoint && iobroker add gira-endpoint
+Variante A (empfohlen): per Tarball installieren *geht*
+# im Projektordner
+cd ~/iobroker.gira-endpoint
+npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.0.1.tgz
+
+# ins ioBroker-Verzeichnis und dort installieren (als iobroker-User)
+cd /opt/iobroker
+sudo -u iobroker -H npm i --omit=dev ~/iobroker.gira-endpoint/iobroker.gira-endpoint-0.0.1.tgz
+
+# Dateien hochladen & Instanz anlegen
+iobroker upload gira-endpoint
+## optional hinzufügen
+#iobroker add gira-endpoint
+
 ```
+
+Variante B: per npm link (für Dev bequem)
+# im Projektordner
+cd ~/iobroker.gira-endpoint
+npm link
+
+# ins ioBroker-Verzeichnis und verlinken
+cd /opt/iobroker
+sudo -u iobroker -H npm link iobroker.gira-endpoint
+
+iobroker upload gira-endpoint
+iobroker add gira-endpoint
+
+Alternative: dev-server (ohne Installation testen)
+npm i -g @iobroker/dev-server
+cd ~/iobroker.gira-endpoint
+dev-server setup
+dev-server watch
 
 Danach Instanz in Admin öffnen und Verbindung einstellen (Host/Port/Path/TLS/Benutzer).
 
