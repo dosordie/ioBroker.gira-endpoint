@@ -11,6 +11,7 @@ export interface GiraClientOptions {
   path: string;
   username?: string;
   password?: string;
+  queryAuth?: boolean;
   pingIntervalMs?: number;
   reconnect?: {
     minMs: number; maxMs: number; factor: number; jitter: number;
@@ -40,6 +41,7 @@ export class GiraClient extends EventEmitter {
       path: "/",
       username: "",
       password: "",
+      queryAuth: false,
       pingIntervalMs: 30000,
       reconnect: { minMs: 1000, maxMs: 30000, factor: 1.7, jitter: 0.2 },
       tls: {},
@@ -51,14 +53,18 @@ export class GiraClient extends EventEmitter {
   public connect(): void {
     this.closedByUser = false;
     const scheme = this.opts.ssl ? "wss" : "ws";
-    const path = this.opts.path.startsWith("/") ? this.opts.path : `/${this.opts.path}`;
-    const url = `${scheme}://${this.opts.host}:${this.opts.port}${path}`;
 
     const headers: Record<string, string> = {};
-    if (this.opts.username) {
-      const token = Buffer.from(`${this.opts.username}:${this.opts.password ?? ""}`).toString("base64");
+    const token = Buffer.from(`${this.opts.username ?? ""}:${this.opts.password ?? ""}`).toString("base64");
+
+    const path = this.opts.queryAuth
+      ? "/endpoints/ws"
+      : this.opts.path.startsWith("/") ? this.opts.path : `/${this.opts.path}`;
+    const query = this.opts.queryAuth && this.opts.username ? `?authorization=${token}` : "";
+    if (!this.opts.queryAuth && this.opts.username) {
       headers["Authorization"] = `Basic ${token}`;
     }
+    const url = `${scheme}://${this.opts.host}:${this.opts.port}${path}${query}`;
 
     const wsOpts: WebSocket.ClientOptions = { headers, ...this.opts.tls };
     const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
@@ -88,6 +94,28 @@ export class GiraClient extends EventEmitter {
         try { payload = JSON.parse(text); } catch {
           payload = { raw: text };
         }
+
+        // payload.data.value prüfen und ggf. konvertieren
+        const val = payload?.data?.value;
+        if (val !== undefined) {
+          let v: any = val;
+          if (typeof v === "string") {
+            const num = Number(v);
+            if (!isNaN(num)) {
+              v = num;
+            } else {
+              try {
+                v = Buffer.from(v, "base64").toString("utf8");
+              } catch {
+                // ignorieren, wenn keine gültige Base64
+              }
+            }
+          }
+          if (v === 1 || v === "1") v = true;
+          else if (v === 0 || v === "0") v = false;
+          payload.data.value = v;
+        }
+
         this.emit("event", payload);
       } catch (err) {
         this.emit("error", err);
@@ -111,6 +139,14 @@ export class GiraClient extends EventEmitter {
       const data = typeof obj === "string" ? obj : JSON.stringify(obj);
       this.ws.send(data);
     }
+  }
+
+  public subscribe(keys: string[]): void {
+    this.send({ type: "subscribe", param: { keys } });
+  }
+
+  public unsubscribe(keys: string[]): void {
+    this.send({ type: "unsubscribe", param: { keys } });
   }
 
   public close(): void {

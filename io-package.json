@@ -48,11 +48,11 @@
       "maxMs": 30000,
       "factor": 1.7,
       "jitter": 0.2
-    },
-    "ca": "",
-    "cert": "",
-    "key": "",
-    "rejectUnauthorized": true
+     "ca": "",
+     "cert": "",
+     "key": "",
+     "rejectUnauthorized": true
+    "endpointKeys": ""
   },
   "encryptedNative": ["password"],
   "objects": [],

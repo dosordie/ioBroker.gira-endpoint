@@ -10,16 +10,19 @@ type NativeConfig = {
   path?: string;
   username?: string;
   password?: string;
+  queryAuth?: boolean;
   pingIntervalMs?: number;
   reconnect?: { minMs?: number; maxMs?: number; factor?: number; jitter?: number };
   ca?: string;
   cert?: string;
   key?: string;
   rejectUnauthorized?: boolean;
+  endpointKeys?: string;
 };
 
 class GiraEndpointAdapter extends utils.Adapter {
   private client?: GiraClient;
+  private endpointKeys: string[] = [];
 
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
@@ -28,6 +31,7 @@ class GiraEndpointAdapter extends utils.Adapter {
     });
     this.on("ready", this.onReady.bind(this));
     this.on("unload", this.onUnload.bind(this));
+    this.on("stateChange", this.onStateChange.bind(this));
   }
 
   private async onReady(): Promise<void> {
@@ -38,10 +42,17 @@ class GiraEndpointAdapter extends utils.Adapter {
       const host = String(cfg.host ?? "").trim();
       const port = Number(cfg.port ?? 80);
       const ssl = Boolean(cfg.ssl ?? false);
-      const path = String(cfg.path ?? "/").trim() || "/";
+      const queryAuth = Boolean(cfg.queryAuth ?? false);
+      const path = queryAuth ? "/endpoints/ws" : String(cfg.path ?? "/").trim() || "/";
       const username = String(cfg.username ?? "");
       const password = String(cfg.password ?? "");
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
+      
+      const endpointKeys = String(cfg.endpointKeys ?? "")
+        .split(/[,;\s]+/)
+        .map((k) => k.trim())
+        .filter((k) => k);
+      this.endpointKeys = endpointKeys;
 
       const ca = cfg.ca ? String(cfg.ca) : undefined;
       const cert = cfg.cert ? String(cfg.cert) : undefined;
@@ -50,10 +61,12 @@ class GiraEndpointAdapter extends utils.Adapter {
       const tls = { ca, cert, key, rejectUnauthorized };
 
       this.client = new GiraClient({ host, port, ssl, path, username, password, pingIntervalMs, tls });
+      this.client = new GiraClient({ host, port, ssl, path, username, password, pingIntervalMs, queryAuth })
 
       this.client.on("open", () => {
         this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);
         this.setState("info.connection", true, true);
+        if (this.endpointKeys.length) this.client!.subscribe(this.endpointKeys);
       });
 
       this.client.on("close", (info: any) => {
@@ -67,19 +80,39 @@ class GiraEndpointAdapter extends utils.Adapter {
       });
 
       this.client.on("event", async (payload: any) => {
-        // TODO: Mapping auf echte Gira-Events
-        await this.setStateAsync("info.lastEvent", { val: JSON.stringify(payload), ack: true });
-        // Beispiel: wenn payload {topic:"sensor/xyz", value:123}
-        if (payload && payload.topic) {
-          const id = this.sanitizeId(String(payload.topic));
-          await this.setObjectNotExistsAsync(id, {
-            type: "state",
-            common: { name: id, type: "mixed", role: "state", read: true, write: false },
-            native: {},
-          });
-          await this.setStateAsync(id, { val: payload.value ?? payload, ack: true });
-        }
+        const data = payload?.data;
+        if (!data || data.uid === undefined) return;
+        const id = this.sanitizeId(String(data.uid));
+        const val = data.value;
+        let type: ioBroker.StateCommon["type"] = "mixed";
+        if (typeof val === "boolean") type = "boolean";
+        else if (typeof val === "number") type = "number";
+        else if (typeof val === "string") type = "string";
+        await this.setObjectNotExistsAsync(id, {
+          type: "state",
+          common: { name: id, type, role: "state", read: true, write: false },
+          native: {},
+        });
+        await this.setStateAsync(id, { val, ack: true });
       });
+
+      await this.setObjectNotExistsAsync("control", {
+        type: "channel",
+        common: { name: "Control" },
+        native: {},
+      });
+      await this.setObjectNotExistsAsync("control.subscribe", {
+        type: "state",
+        common: { name: "Subscribe keys", type: "string", role: "state", read: false, write: true },
+        native: {},
+      });
+      await this.setObjectNotExistsAsync("control.unsubscribe", {
+        type: "state",
+        common: { name: "Unsubscribe keys", type: "string", role: "state", read: false, write: true },
+        native: {},
+      });
+      this.subscribeStates("control.subscribe");
+      this.subscribeStates("control.unsubscribe");
 
       this.client.connect();
     } catch (e: any) {
@@ -100,6 +133,23 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.log.error(`onUnload error: ${e}`);
     } finally {
       callback();
+    }
+  }
+
+  private onStateChange(id: string, state: ioBroker.State | null | undefined): void {
+    if (!state || state.ack || !this.client) return;
+    const key = id.split(".").pop();
+    const keys = String(state.val || "")
+      .split(/[,;\s]+/)
+      .map((k) => k.trim())
+      .filter((k) => k);
+    if (!keys.length) return;
+    if (key === "subscribe") {
+      this.client.subscribe(keys);
+      this.setState(id, { val: state.val, ack: true });
+    } else if (key === "unsubscribe") {
+      this.client.unsubscribe(keys);
+      this.setState(id, { val: state.val, ack: true });
     }
   }
 }
