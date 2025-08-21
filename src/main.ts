@@ -60,8 +60,18 @@ class GiraEndpointAdapter extends utils.Adapter {
       const rejectUnauthorized = cfg.rejectUnauthorized !== undefined ? Boolean(cfg.rejectUnauthorized) : undefined;
       const tls = { ca, cert, key, rejectUnauthorized };
 
-      this.client = new GiraClient({ host, port, ssl, path, username, password, pingIntervalMs, tls });
-      this.client = new GiraClient({ host, port, ssl, path, username, password, pingIntervalMs, queryAuth })
+      // Instantiate client once with all relevant options
+      this.client = new GiraClient({
+        host,
+        port,
+        ssl,
+        path,
+        username,
+        password,
+        pingIntervalMs,
+        queryAuth,
+        tls,
+      });
 
       this.client.on("open", () => {
         this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);
