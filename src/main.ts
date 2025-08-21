@@ -236,6 +236,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private sanitizeId(s: string): string {
+    return s.replace(/[^a-z0-9@_\-\.]/gi, "_");
     return s.replace(/[^a-z0-9_\-\.]/gi, "_").toUpperCase();
   }
 
