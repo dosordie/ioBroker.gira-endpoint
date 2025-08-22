@@ -45,11 +45,11 @@ Variante A (empfohlen): per Tarball installieren
 cd ~/iobroker.gira-endpoint
 git pull --ff-only
 npm run build
-npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.1.0.tgz
+npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.2.0.tgz
 
 # ins ioBroker-Verzeichnis und dort installieren (als iobroker-User)
 cd /opt/iobroker
-sudo -u iobroker -H npm i --omit=dev ~/iobroker.gira-endpoint/iobroker.gira-endpoint-0.1.0.tgz
+sudo -u iobroker -H npm i --omit=dev ~/iobroker.gira-endpoint/iobroker.gira-endpoint-0.2.0.tgz
 
 # Dateien hochladen & Instanz anlegen
 iobroker upload gira-endpoint
@@ -61,6 +61,9 @@ iobroker upload gira-endpoint
 Danach Instanz in Admin öffnen und Verbindung einstellen (Host/Port/Path/TLS/Benutzer).
 
 ## Changelog
+
+### 0.2.0
+* Added configurable mapping between ioBroker states and Gira endpoints
 
 ### 0.1.0
 * Adapter basically working and tested
