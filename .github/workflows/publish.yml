@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read               # nötig für checkout
+  id-token: write              # nötig für npm provenance
 
 jobs:
   publish:
