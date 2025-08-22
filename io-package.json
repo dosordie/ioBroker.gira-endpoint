@@ -24,6 +24,7 @@
     "platform": "Javascript/Node.js",
     "mode": "daemon",
     "icon": "gira-endpoint.svg",
+    "extIcon": "https://raw.githubusercontent.com/dosordie/ioBroker.gira-endpoint/main/admin/gira-endpoint.svg",
     "authors": ["you"],
     "keywords": ["gira", "websocket", "smarthome"],
     "license": "MIT",
@@ -33,7 +34,8 @@
     "compact": true,
     "type": "protocols",
     "connectionType": "cloud",
-    "dataSource": "push"
+    "dataSource": "push",
+    "dependencies": [{"js-controller": ">=5.0.19"}]
   },
   "native": {
     "host": "127.0.0.1",

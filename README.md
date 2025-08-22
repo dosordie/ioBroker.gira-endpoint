@@ -55,3 +55,14 @@ Die Payload-Struktur deines Gira-Endpoints in `src/lib/GiraClient.ts` (Parsing) 
 
 - Node >= 18 (empfohlen 20/22)
 - Bei TLS ggf. Zertifikate/Truststore je nach Umgebung ergänzen.
+
+## Changelog
+
+### 0.1.0
+* Adapter basically working and tested
+
+### 0.0.1
+* Initial version (WS client, reconnect, basic event mapping)
+
+## License
+MIT License
