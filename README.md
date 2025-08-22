@@ -51,15 +51,6 @@ iobroker upload gira-endpoint
 
 Danach Instanz in Admin öffnen und Verbindung einstellen (Host/Port/Path/TLS/Benutzer).
 
-## Mapping anpassen
-
-Die Payload-Struktur deines Gira-Endpoints in `src/lib/GiraClient.ts` (Parsing) und `src/main.ts` (Mapping) anpassen.
-
-## Hinweise
-
-- Node >= 18 (empfohlen 20/22)
-- Bei TLS ggf. Zertifikate/Truststore je nach Umgebung ergänzen.
-
 ## Changelog
 
 ### 0.1.0
