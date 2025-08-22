@@ -10,20 +10,20 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   path?: string;
   username?: string;
   password?: string;
-  queryAuth?: boolean;
   pingIntervalMs?: number;
   reconnect?: { minMs?: number; maxMs?: number; factor?: number; jitter?: number };
   ca?: string;
   cert?: string;
   key?: string;
   rejectUnauthorized?: boolean;
-  endpointKeys?: string[] | { key: string }[] | string;
+  endpointKeys?: string[] | { key: string; name?: string }[] | string;
 }
 
 class GiraEndpointAdapter extends utils.Adapter {
   private client?: GiraClient;
   private endpointKeys: string[] = [];
   private keyIdMap = new Map<string, string>();
+  private keyDescMap = new Map<string, string>();
 
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
@@ -76,24 +76,38 @@ class GiraEndpointAdapter extends utils.Adapter {
         const host = String(cfg.host ?? "").trim();
         const port = Number(cfg.port ?? 80);
         const ssl = Boolean(cfg.ssl ?? false);
-        const queryAuth = Boolean(cfg.queryAuth ?? false);
-        const path = queryAuth ? "/endpoints/ws" : String(cfg.path ?? "/").trim() || "/";
+        const path = String(cfg.path ?? "/endpoints/ws").trim() || "/endpoints/ws";
       const username = String(cfg.username ?? "");
       const password = String(cfg.password ?? "");
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
-      
+
       const rawKeys = cfg.endpointKeys;
-      const endpointKeys = Array.isArray(rawKeys)
-        ? rawKeys
-            .map((k) => (typeof k === "object" && k ? (k as any).key : k))
-            .map((k) => String(k).trim())
-            .filter((k) => k)
-            .map((k) => this.normalizeKey(k))
-        : String(rawKeys ?? "")
-            .split(/[,;\s]+/)
-            .map((k) => k.trim())
-            .filter((k) => k)
-            .map((k) => this.normalizeKey(k));
+      const endpointKeys: string[] = [];
+      if (Array.isArray(rawKeys)) {
+        for (const k of rawKeys) {
+          if (typeof k === "object" && k) {
+            const key = this.normalizeKey(String((k as any).key ?? "").trim());
+            if (!key) continue;
+            const name = String((k as any).name ?? "").trim();
+            if (name) this.keyDescMap.set(key, name);
+            endpointKeys.push(key);
+          } else {
+            const key = this.normalizeKey(String(k).trim());
+            if (!key) continue;
+            endpointKeys.push(key);
+          }
+        }
+      } else {
+        const arr = String(rawKeys ?? "")
+          .split(/[,;\s]+/)
+          .map((k) => k.trim())
+          .filter((k) => k)
+          .map((k) => this.normalizeKey(k));
+        endpointKeys.push(...arr);
+      }
+      for (const key of endpointKeys) {
+        if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
+      }
       this.endpointKeys = endpointKeys;
 
       this.log.info(
@@ -106,9 +120,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       for (const key of this.endpointKeys) {
         const id = `objekte.${this.sanitizeId(key)}`;
         this.keyIdMap.set(key, id);
+        const name = this.keyDescMap.get(key) || key;
         await this.setObjectNotExistsAsync(id, {
           type: "state",
-          common: { name: key, type: "mixed", role: "state", read: true, write: true },
+          common: { name, type: "mixed", role: "state", read: true, write: true },
           native: {},
         });
         this.log.debug(`Pre-created endpoint state ${id}`);
@@ -130,7 +145,12 @@ class GiraEndpointAdapter extends utils.Adapter {
         username,
         password,
         pingIntervalMs,
-        queryAuth,
+        reconnect: {
+          minMs: cfg.reconnect?.minMs ?? 1000,
+          maxMs: cfg.reconnect?.maxMs ?? 30000,
+          factor: cfg.reconnect?.factor ?? 1.7,
+          jitter: cfg.reconnect?.jitter ?? 0.2,
+        },
         tls,
       });
 
@@ -217,9 +237,11 @@ class GiraEndpointAdapter extends utils.Adapter {
             value = val ? 1 : 0;
           } else if (typeof val === "number") type = "number";
           else if (typeof val === "string") type = "string";
+          const name = this.keyDescMap.get(normalized) || normalized;
+          this.keyDescMap.set(normalized, name);
           await this.extendObjectAsync(id, {
             type: "state",
-            common: { name: normalized, type, role: "state", read: true, write: true },
+            common: { name, type, role: "state", read: true, write: true },
             native: {},
           });
           this.subscribeStates(id);
