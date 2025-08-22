@@ -22,7 +22,7 @@
     "icon": "gira-endpoint.svg",
       "extIcon": "https://raw.githubusercontent.com/dosordie/iobroker.gira-endpoint/main/admin/gira-endpoint.svg",
     "authors": ["you"],
-    "keywords": ["gira", "websocket", "smarthome"],
+    "keywords": ["ioBroker", "adapter", "gira", "homeserver", "websocket"],
     "license": "GPL-3.0-or-later",
     "enabled": true,
     "materialize": false,
@@ -31,6 +31,8 @@
     "type": "protocols",
     "connectionType": "cloud",
     "dataSource": "push",
+    "encryptedNative": ["password"],
+    "protectedNative": ["password"],
     "dependencies": [{"js-controller": ">=5.0.19"}]
   },
   "native": {
@@ -52,7 +54,6 @@
       "updateLastEvent": false,
       "endpointKeys": []
     },
-  "encryptedNative": ["password"],
   "objects": [],
   "instanceObjects": [
     {

@@ -18,10 +18,11 @@
     "node": ">=18"
   },
   "keywords": [
-    "iobroker",
+    "ioBroker",
+    "adapter",
     "gira",
-    "websocket",
-    "smarthome"
+    "homeserver",
+    "websocket"
   ],
   "dependencies": {
     "@iobroker/adapter-core": "^3.2.2",
