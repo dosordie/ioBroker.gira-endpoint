@@ -26,9 +26,11 @@ class GiraClient extends events_1.EventEmitter {
             reconnect: { minMs: 1000, maxMs: 30000 },
             tls: {},
         };
-        this.opts = Object.assign({}, defaults, opts, {
-            reconnect: Object.assign({}, defaults.reconnect, opts.reconnect),
-        });
+        this.opts = {
+            ...defaults,
+            ...opts,
+            reconnect: { ...defaults.reconnect, ...(opts.reconnect || {}) },
+        };
         this.backoffMs = this.opts.reconnect.minMs;
     }
     connect() {

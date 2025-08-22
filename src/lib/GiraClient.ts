@@ -7,6 +7,11 @@ EventEmitter.defaultMaxListeners = 0;
 const BACKOFF_FACTOR = 1.7;
 const BACKOFF_JITTER = 0.2;
 
+interface ReconnectOptions {
+  minMs: number;
+  maxMs: number;
+}
+
 export interface GiraClientOptions {
   host: string;
   port: number;
@@ -15,10 +20,7 @@ export interface GiraClientOptions {
   username?: string;
   password?: string;
   pingIntervalMs?: number;
-  reconnect?: {
-    minMs?: number;
-    maxMs?: number;
-  };
+  reconnect?: Partial<ReconnectOptions>;
   tls?: {
     ca?: string | Buffer | Array<string | Buffer>;
     cert?: string | Buffer;
@@ -27,17 +29,25 @@ export interface GiraClientOptions {
   };
 }
 
+type ResolvedGiraClientOptions = Omit<GiraClientOptions, "reconnect"> & {
+  reconnect: ReconnectOptions;
+  username: string;
+  password: string;
+  pingIntervalMs: number;
+  tls: NonNullable<GiraClientOptions["tls"]>;
+};
+
 export class GiraClient extends EventEmitter {
   private ws?: WebSocket;
   private closedByUser = false;
-  private opts: Required<GiraClientOptions>;
+  private opts: ResolvedGiraClientOptions;
   private backoffMs: number;
   private pingTimer?: NodeJS.Timeout;
 
   constructor(opts: GiraClientOptions) {
     super();
     // Defaults + Merge ohne doppelte Literal-Keys (TS2783 vermeiden)
-    const defaults: Required<GiraClientOptions> = {
+    const defaults: ResolvedGiraClientOptions = {
       host: "",
       port: 80,
       ssl: false,
@@ -48,9 +58,11 @@ export class GiraClient extends EventEmitter {
       reconnect: { minMs: 1000, maxMs: 30000 },
       tls: {},
     };
-    this.opts = Object.assign({}, defaults, opts, {
-      reconnect: Object.assign({}, defaults.reconnect, opts.reconnect),
-    });
+    this.opts = {
+      ...defaults,
+      ...opts,
+      reconnect: { ...defaults.reconnect, ...(opts.reconnect || {}) },
+    };
     this.backoffMs = this.opts.reconnect.minMs;
   }
 
@@ -64,7 +76,7 @@ export class GiraClient extends EventEmitter {
     const query = this.opts.username ? `?authorization=${token}` : "";
     const url = `${scheme}://${this.opts.host}:${this.opts.port}${path}${query}`;
 
-    const wsOpts: WebSocket.ClientOptions = { headers, ...this.opts.tls };
+    const wsOpts: any = { headers, ...this.opts.tls };
     const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
     if (proxy) {
       try {
