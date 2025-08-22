@@ -28,7 +28,7 @@ Variante A (empfohlen): per Tarball installieren
 cd ~/iobroker.gira-endpoint
 git pull --ff-only
 npm run build
-npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.0.1.tgz
+npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.1.0.tgz
 
 # ins ioBroker-Verzeichnis und dort installieren (als iobroker-User)
 cd /opt/iobroker
