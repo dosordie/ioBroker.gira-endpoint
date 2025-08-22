@@ -1,4 +1,4 @@
-![Logo](admin/gira-endpoint.svg)
+<img src="admin/gira-endpoint.svg" alt="Logo" width="120"/>
 
 # ioBroker Gira-Endpoint Adapter
 ## Gira Endpoint Adapter
