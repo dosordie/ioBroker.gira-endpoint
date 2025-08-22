@@ -18,6 +18,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   rejectUnauthorized?: boolean;
   endpointKeys?: string[] | { key: string; name?: string }[] | string;
   updateLastEvent?: boolean;
+  forwardMappings?: { stateId: string; key: string; name?: string }[];
 }
 
 class GiraEndpointAdapter extends utils.Adapter {
@@ -25,6 +26,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private endpointKeys: string[] = [];
   private keyIdMap = new Map<string, string>();
   private keyDescMap = new Map<string, string>();
+  private forwardMap = new Map<string, string>();
 
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
@@ -116,6 +118,30 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.endpointKeys.length ? this.endpointKeys.join(", ") : "(none)"
         }`
       );
+
+      const forwardMap = new Map<string, string>();
+      if (Array.isArray(cfg.forwardMappings)) {
+        for (const m of cfg.forwardMappings) {
+          if (typeof m !== "object" || !m) continue;
+          const stateId = String((m as any).stateId ?? "").trim();
+          const key = this.normalizeKey(String((m as any).key ?? "").trim());
+          if (!stateId || !key) continue;
+          const name = String((m as any).name ?? "").trim();
+          if (name) this.keyDescMap.set(key, name);
+          forwardMap.set(stateId, key);
+        }
+      }
+      this.forwardMap = forwardMap;
+      if (this.forwardMap.size) {
+        this.log.info(
+          `Configured forward mappings: ${Array.from(this.forwardMap.entries())
+            .map(([s, k]) => `${s}→${k}`)
+            .join(", ")}`
+        );
+        for (const stateId of this.forwardMap.keys()) {
+          this.subscribeForeignStates(stateId);
+        }
+      }
 
       // Pre-create configured endpoint states so they appear immediately in ioBroker
       for (const key of this.endpointKeys) {
@@ -298,7 +324,25 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private onStateChange(id: string, state: ioBroker.State | null | undefined): void {
-    if (!state || state.ack || !this.client) return;
+    if (!state || !this.client) return;
+
+    const mappedKey = this.forwardMap.get(id);
+    if (mappedKey) {
+      let uidValue: any = state.val;
+      if (typeof uidValue === "boolean") {
+        uidValue = uidValue ? "1" : "0";
+      } else if (typeof uidValue === "string") {
+        if (uidValue === "true" || uidValue === "false") {
+          uidValue = uidValue === "true" ? "1" : "0";
+        } else if (isNaN(Number(uidValue))) {
+          uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+        }
+      }
+      this.client.send({ type: "call", param: { key: mappedKey, method: "set", value: uidValue } });
+      return;
+    }
+
+    if (state.ack) return;
     const key = id.split(".").pop();
     if (!key) return;
     if (key === "subscribe" || key === "unsubscribe") {

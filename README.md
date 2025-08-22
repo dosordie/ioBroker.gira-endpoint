@@ -9,10 +9,11 @@ Damit können Datenpunkte in Echtzeit zwischen dem Homeserver und ioBroker ausge
 So lassen sich Schaltzustände, Sensorwerte oder Szenen aus dem Gira-System nahtlos in ioBroker integrieren und dort weiterverarbeiten.
 
 ### Features
-- Verbindung über WebSocket (WS/WSS)  
-- Senden und Empfangen von Datenpunkten  
-- Echtzeitkommunikation für schnelle Automatisierungen  
-- Einfache Integration in bestehende Smart-Home-Szenarien  
+- Verbindung über WebSocket (WS/WSS)
+- Senden und Empfangen von Datenpunkten
+- Echtzeitkommunikation für schnelle Automatisierungen
+- Einfache Integration in bestehende Smart-Home-Szenarien
+- Weiterleitung fremder ioBroker States zu konfigurierten Gira-Endpunkten
 
 ### Usage
 Eingabewerte können sein:  true | false | toggle | String | Number
