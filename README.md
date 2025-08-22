@@ -32,7 +32,7 @@ npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.0.1.tgz
 
 # ins ioBroker-Verzeichnis und dort installieren (als iobroker-User)
 cd /opt/iobroker
-sudo -u iobroker -H npm i --omit=dev ~/iobroker.gira-endpoint/iobroker.gira-endpoint-0.0.1.tgz
+sudo -u iobroker -H npm i --omit=dev ~/iobroker.gira-endpoint/iobroker.gira-endpoint-0.1.0.tgz
 
 # Dateien hochladen & Instanz anlegen
 iobroker upload gira-endpoint
