@@ -10,22 +10,23 @@
         "port": { "type": "number", "label": "Port", "min": 1, "max": 65535, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
         "ssl": { "type": "checkbox", "label": "TLS (wss://) aktivieren", "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
         "path": { "type": "text", "label": "Pfad", "default": "/endpoints/ws", "placeholder": "/", "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
-        "authHeader": { "type": "header", "text": "Authentifizierung", "size": 2 },
-        "username": { "type": "text", "label": "Benutzername", "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
-        "password": { "type": "password", "label": "Passwort", "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
-        "settingsHeader": { "type": "header", "text": "Verbindungseinstellungen", "size": 2 },
-        "pingIntervalMs": { "type": "number", "label": "Ping-Intervall (ms)", "min": 0, "default": 30000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
-        "reconnect": {
-          "type": "panel",
-          "label": "Reconnect",
-          "items": {
-            "minMs": { "type": "number", "label": "Reconnect min (ms)", "min": 200, "default": 1000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
-            "maxMs": { "type": "number", "label": "Reconnect max (ms)", "min": 1000, "default": 30000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 }
-          }
+          "authHeader": { "type": "header", "text": "Authentifizierung", "size": 2 },
+          "username": { "type": "text", "label": "Benutzername", "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
+          "password": { "type": "password", "label": "Passwort", "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
+          "settingsHeader": { "type": "header", "text": "Verbindungseinstellungen", "size": 2 },
+          "pingIntervalMs": { "type": "number", "label": "Ping-Intervall (ms)", "min": 0, "default": 30000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
+          "reconnect": {
+            "type": "panel",
+            "label": "Reconnect",
+            "items": {
+              "minMs": { "type": "number", "label": "Reconnect min (ms)", "min": 200, "default": 1000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
+              "maxMs": { "type": "number", "label": "Reconnect max (ms)", "min": 1000, "default": 30000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 }
+            }
+          },
+          "updateLastEvent": { "type": "checkbox", "label": "info.lastEvent aktualisieren", "default": false, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 }
         }
-      }
-    },
-    "keysTab": {
+      },
+      "keysTab": {
       "type": "panel",
       "label": "Keys",
       "items": {

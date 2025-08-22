@@ -181,10 +181,12 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.client.on("event", async (payload) => {
                 // Provide full event information for debugging
                 this.log.debug(`Received event: ${JSON.stringify(payload)}`);
-                await this.setStateAsync("info.lastEvent", {
-                    val: JSON.stringify(payload),
-                    ack: true,
-                });
+                if (this.config.updateLastEvent) {
+                    await this.setStateAsync("info.lastEvent", {
+                        val: JSON.stringify(payload),
+                        ack: true,
+                    });
+                }
                 const data = payload?.data;
                 if (!data)
                     return;

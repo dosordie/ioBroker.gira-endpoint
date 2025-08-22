@@ -17,6 +17,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   key?: string;
   rejectUnauthorized?: boolean;
   endpointKeys?: string[] | { key: string; name?: string }[] | string;
+  updateLastEvent?: boolean;
 }
 
 class GiraEndpointAdapter extends utils.Adapter {
@@ -176,10 +177,12 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.client.on("event", async (payload: any) => {
         // Provide full event information for debugging
         this.log.debug(`Received event: ${JSON.stringify(payload)}`);
-        await this.setStateAsync("info.lastEvent", {
-          val: JSON.stringify(payload),
-          ack: true,
-        });
+        if (this.config.updateLastEvent) {
+          await this.setStateAsync("info.lastEvent", {
+            val: JSON.stringify(payload),
+            ack: true,
+          });
+        }
 
         const data = payload?.data;
         if (!data) return;
