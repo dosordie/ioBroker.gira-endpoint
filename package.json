@@ -9,7 +9,7 @@
     "url": "git+https://github.com/dosordie/ioBroker.gira-endpoint.git"
   },
   "bugs": { "url": "https://github.com/dosordie/iobroker.gira-endpoint/issues" },
-  "homepage": "https://github.com/dosordie/iobroker.gira-endpoint#readme"
+  "homepage": "https://github.com/dosordie/iobroker.gira-endpoint#readme",
   "main": "build/main.js",
   "scripts": {
     "build": "tsc -p .",
