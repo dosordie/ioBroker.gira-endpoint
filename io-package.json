@@ -6,10 +6,6 @@
       "0.1.0": {
         "en": "Adapter basically working and tested",
         "de": "Adapter grob lauffähig und getestet"
-      },
-      "0.0.1": {
-        "en": "Initial version (WS client, reconnect, basic event mapping)",
-        "de": "Erste Version (WS-Client, Reconnect, Basis-Event-Mapping)"
       }
     },
     "title": "Gira Endpoint",
