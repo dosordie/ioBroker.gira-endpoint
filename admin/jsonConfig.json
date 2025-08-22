@@ -160,12 +160,12 @@
             }
           ]
         },
-        "forwardHeader": {
+        "mappingsHeader": {
           "type": "header",
-          "text": "Weiterleitung fremder ioBroker States",
+          "text": "Mapping fremder ioBroker States",
           "size": 2
         },
-        "forwardMappings": {
+        "mappings": {
           "type": "table",
           "label": "State-ID zu CO@ Mapping",
           "xs": 12,
@@ -183,6 +183,18 @@
               "type": "text",
               "attr": "key",
               "label": "CO@"
+            },
+            {
+              "type": "checkbox",
+              "attr": "toEndpoint",
+              "label": "Fremd → Endpoint",
+              "default": true
+            },
+            {
+              "type": "checkbox",
+              "attr": "toState",
+              "label": "Endpoint → Fremd",
+              "default": false
             },
             {
               "type": "text",

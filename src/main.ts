@@ -18,7 +18,13 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   rejectUnauthorized?: boolean;
   endpointKeys?: string[] | { key: string; name?: string }[] | string;
   updateLastEvent?: boolean;
-  forwardMappings?: { stateId: string; key: string; name?: string }[];
+  mappings?: {
+    stateId: string;
+    key: string;
+    name?: string;
+    toEndpoint?: boolean;
+    toState?: boolean;
+  }[];
 }
 
 class GiraEndpointAdapter extends utils.Adapter {
@@ -27,6 +33,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private keyIdMap = new Map<string, string>();
   private keyDescMap = new Map<string, string>();
   private forwardMap = new Map<string, string>();
+  private reverseMap = new Map<string, string>();
 
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
@@ -110,19 +117,28 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
 
       const forwardMap = new Map<string, string>();
-      if (Array.isArray(cfg.forwardMappings)) {
-        for (const m of cfg.forwardMappings) {
+      const reverseMap = new Map<string, string>();
+      if (Array.isArray(cfg.mappings)) {
+        for (const m of cfg.mappings) {
           if (typeof m !== "object" || !m) continue;
           const stateId = String((m as any).stateId ?? "").trim();
           const key = this.normalizeKey(String((m as any).key ?? "").trim());
           if (!stateId || !key) continue;
           const name = String((m as any).name ?? "").trim();
           if (name) this.keyDescMap.set(key, name);
-          forwardMap.set(stateId, key);
+          const toEndpoint = (m as any).toEndpoint !== false;
+          const toState = Boolean((m as any).toState);
+          if (toEndpoint) {
+            forwardMap.set(stateId, key);
+          }
+          if (toState) {
+            reverseMap.set(key, stateId);
+          }
           if (!endpointKeys.includes(key)) endpointKeys.push(key);
         }
       }
       this.forwardMap = forwardMap;
+      this.reverseMap = reverseMap;
 
       for (const key of endpointKeys) {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
@@ -143,6 +159,13 @@ class GiraEndpointAdapter extends utils.Adapter {
         for (const stateId of this.forwardMap.keys()) {
           this.subscribeForeignStates(stateId);
         }
+      }
+      if (this.reverseMap.size) {
+        this.log.info(
+          `Configured reverse mappings: ${Array.from(this.reverseMap.entries())
+            .map(([k, s]) => `${k}→${s}`)
+            .join(", ")}`
+        );
       }
 
       // Pre-create configured endpoint states so they appear immediately in ioBroker
@@ -276,6 +299,13 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.subscribeStates(id);
           this.log.debug(`Updating state ${id} -> ${JSON.stringify(value)}`);
           await this.setStateAsync(id, { val: value, ack: true });
+          const mappedForeign = this.reverseMap.get(normalized);
+          if (mappedForeign) {
+            this.log.debug(
+              `Updating mapped foreign state ${mappedForeign} -> ${JSON.stringify(value)}`
+            );
+            await this.setForeignStateAsync(mappedForeign, { val: value, ack: true });
+          }
         }
       });
 
@@ -330,6 +360,7 @@ class GiraEndpointAdapter extends utils.Adapter {
 
     const mappedKey = this.forwardMap.get(id);
     if (mappedKey) {
+      if (state.ack) return;
       let uidValue: any = state.val;
       let ackVal: any = state.val;
       if (typeof uidValue === "boolean") {
