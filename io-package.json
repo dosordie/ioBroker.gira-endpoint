@@ -49,12 +49,13 @@
       "minMs": 1000,
       "maxMs": 30000
     },
-    "ca": "",
-    "cert": "",
-    "key": "",
-    "rejectUnauthorized": true,
-    "endpointKeys": []
-  },
+      "ca": "",
+      "cert": "",
+      "key": "",
+      "rejectUnauthorized": true,
+      "updateLastEvent": false,
+      "endpointKeys": []
+    },
   "encryptedNative": ["password"],
   "objects": [],
   "instanceObjects": [
