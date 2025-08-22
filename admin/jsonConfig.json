@@ -9,11 +9,10 @@
         "host": { "type": "text", "label": "Host", "placeholder": "192.168.x.y" },
         "port": { "type": "number", "label": "Port", "min": 1, "max": 65535 },
         "ssl": { "type": "checkbox", "label": "TLS (wss://) aktivieren" },
-        "path": { "type": "text", "label": "Pfad", "placeholder": "/" },
-        "authHeader": { "type": "header", "text": "Authentifizierung (optional)", "size": 2 },
+        "path": { "type": "text", "label": "Pfad", "default": "/endpoints/ws", "placeholder": "/" },
+        "authHeader": { "type": "header", "text": "Authentifizierung", "size": 2 },
         "username": { "type": "text", "label": "Benutzername" },
         "password": { "type": "password", "label": "Passwort" },
-        "queryAuth": { "type": "checkbox", "label": "Token als Query (?authorization=) nutzen" },
         "settingsHeader": { "type": "header", "text": "Verbindungseinstellungen", "size": 2 },
         "pingIntervalMs": { "type": "number", "label": "Ping-Intervall (ms)", "min": 0 },
         "reconnect": {
@@ -37,7 +36,8 @@
           "type": "table",
           "label": "Endpoint-Keys",
           "items": [
-            { "type": "text", "attr": "key", "label": "Key" }
+            { "type": "text", "attr": "key", "label": "CO@" },
+            { "type": "text", "attr": "name", "label": "Beschreibung" }
           ]
         }
       }

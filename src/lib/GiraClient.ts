@@ -11,7 +11,6 @@ export interface GiraClientOptions {
   path: string;
   username?: string;
   password?: string;
-  queryAuth?: boolean;
   pingIntervalMs?: number;
   reconnect?: {
     minMs: number; maxMs: number; factor: number; jitter: number;
@@ -41,7 +40,6 @@ export class GiraClient extends EventEmitter {
       path: "/",
       username: "",
       password: "",
-      queryAuth: false,
       pingIntervalMs: 30000,
       reconnect: { minMs: 1000, maxMs: 30000, factor: 1.7, jitter: 0.2 },
       tls: {},
@@ -56,14 +54,8 @@ export class GiraClient extends EventEmitter {
 
     const headers: Record<string, string> = {};
     const token = Buffer.from(`${this.opts.username ?? ""}:${this.opts.password ?? ""}`).toString("base64");
-
-    const path = this.opts.queryAuth
-      ? "/endpoints/ws"
-      : this.opts.path.startsWith("/") ? this.opts.path : `/${this.opts.path}`;
-    const query = this.opts.queryAuth && this.opts.username ? `?authorization=${token}` : "";
-    if (!this.opts.queryAuth && this.opts.username) {
-      headers["Authorization"] = `Basic ${token}`;
-    }
+    const path = this.opts.path.startsWith("/") ? this.opts.path : `/${this.opts.path}`;
+    const query = this.opts.username ? `?authorization=${token}` : "";
     const url = `${scheme}://${this.opts.host}:${this.opts.port}${path}${query}`;
 
     const wsOpts: WebSocket.ClientOptions = { headers, ...this.opts.tls };

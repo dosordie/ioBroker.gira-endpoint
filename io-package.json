@@ -39,10 +39,9 @@
     "host": "127.0.0.1",
     "port": 80,
     "ssl": false,
-    "path": "/",
+    "path": "/endpoints/ws",
     "username": "",
     "password": "",
-    "queryAuth": false,
     "pingIntervalMs": 30000,
     "reconnect": {
       "minMs": 1000,
