@@ -121,12 +121,6 @@ class GiraEndpointAdapter extends utils.Adapter {
                     .map((k) => this.normalizeKey(k));
                 endpointKeys.push(...arr);
             }
-            for (const key of endpointKeys) {
-                if (!this.keyDescMap.has(key))
-                    this.keyDescMap.set(key, key);
-            }
-            this.endpointKeys = endpointKeys;
-            this.log.info(`Configured endpoint keys: ${this.endpointKeys.length ? this.endpointKeys.join(", ") : "(none)"}`);
             const forwardMap = new Map();
             if (Array.isArray(cfg.forwardMappings)) {
                 for (const m of cfg.forwardMappings) {
@@ -140,9 +134,17 @@ class GiraEndpointAdapter extends utils.Adapter {
                     if (name)
                         this.keyDescMap.set(key, name);
                     forwardMap.set(stateId, key);
+                    if (!endpointKeys.includes(key))
+                        endpointKeys.push(key);
                 }
             }
             this.forwardMap = forwardMap;
+            for (const key of endpointKeys) {
+                if (!this.keyDescMap.has(key))
+                    this.keyDescMap.set(key, key);
+            }
+            this.endpointKeys = endpointKeys;
+            this.log.info(`Configured endpoint keys: ${this.endpointKeys.length ? this.endpointKeys.join(", ") : "(none)"}`);
             if (this.forwardMap.size) {
                 this.log.info(`Configured forward mappings: ${Array.from(this.forwardMap.entries())
                     .map(([s, k]) => `${s}→${k}`)
@@ -152,7 +154,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }
             }
             // Pre-create configured endpoint states so they appear immediately in ioBroker
-            for (const key of this.endpointKeys) {
+            for (const key of new Set(this.endpointKeys)) {
                 const id = `objekte.${this.sanitizeId(key)}`;
                 this.keyIdMap.set(key, id);
                 const name = this.keyDescMap.get(key) || key;
@@ -333,11 +335,14 @@ class GiraEndpointAdapter extends utils.Adapter {
         const mappedKey = this.forwardMap.get(id);
         if (mappedKey) {
             let uidValue = state.val;
+            let ackVal = state.val;
             if (typeof uidValue === "boolean") {
+                ackVal = uidValue ? 1 : 0;
                 uidValue = uidValue ? "1" : "0";
             }
             else if (typeof uidValue === "string") {
                 if (uidValue === "true" || uidValue === "false") {
+                    ackVal = uidValue === "true" ? 1 : 0;
                     uidValue = uidValue === "true" ? "1" : "0";
                 }
                 else if (isNaN(Number(uidValue))) {
@@ -345,6 +350,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }
             }
             this.client.send({ type: "call", param: { key: mappedKey, method: "set", value: uidValue } });
+            const mappedId = this.keyIdMap.get(mappedKey) ?? `objekte.${this.sanitizeId(mappedKey)}`;
+            this.keyIdMap.set(mappedKey, mappedId);
+            this.setState(mappedId, { val: ackVal, ack: true });
             return;
         }
         if (state.ack)

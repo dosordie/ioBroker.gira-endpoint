@@ -13,7 +13,7 @@ So lassen sich Schaltzustände, Sensorwerte oder Szenen aus dem Gira-System naht
 - Senden und Empfangen von Datenpunkten
 - Echtzeitkommunikation für schnelle Automatisierungen
 - Einfache Integration in bestehende Smart-Home-Szenarien
-- Weiterleitung fremder ioBroker States zu konfigurierten Gira-Endpunkten
+- Weiterleitung fremder ioBroker States zu konfigurierten Gira-Endpunkten und Spiegelung als eigene Objekte
 
 ### Usage
 Eingabewerte können sein:  true | false | toggle | String | Number
