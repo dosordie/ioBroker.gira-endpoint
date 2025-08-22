@@ -30,10 +30,10 @@
       "type": "panel",
       "label": "Endpunkt IDs",
       "items": {
-        "subscriptionHeader": { "type": "header", "text": "Liste der Homeserver Endpunkt IDs welche abonniert werden", "size": 2 },
+        "subscriptionHeader": { "type": "header", "text": "Liste der Homeserver Endpunkt IDs die abonniert werden", "size": 2 },
         "endpointKeys": {
           "type": "table",
-          "label": "Hier die Endpunkt IDs ohne das CO@ eingeben",
+          "label": "Hier die Endpunkt IDs ohne das CO@ eintragen",
           "items": [
             { "type": "text", "attr": "key", "label": "CO@" },
             { "type": "text", "attr": "name", "label": "Beschreibung" }
