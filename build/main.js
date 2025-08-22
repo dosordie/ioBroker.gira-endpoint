@@ -311,6 +311,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const pending = this.pendingUpdates.get(normalized);
                     if (pending !== undefined &&
                         (pending === value || pending == value)) {
+                    if (pending !== undefined && pending === value) {
                         this.log.debug(`Ignoring echoed event for ${normalized} -> ${JSON.stringify(value)}`);
                         this.pendingUpdates.delete(normalized);
                         continue;
