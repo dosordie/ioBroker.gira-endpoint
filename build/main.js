@@ -137,11 +137,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                         this.keyDescMap.set(key, name);
                     const toEndpoint = m.toEndpoint !== false;
                     const toState = Boolean(m.toState);
+                    const bool = Boolean(m.bool);
                     if (toEndpoint) {
-                        forwardMap.set(stateId, key);
+                        forwardMap.set(stateId, { key, bool });
                     }
                     if (toState) {
-                        reverseMap.set(key, stateId);
+                        reverseMap.set(key, { stateId, bool });
                     }
                     if (!endpointKeys.includes(key))
                         endpointKeys.push(key);
@@ -157,7 +158,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.log.info(`Configured endpoint keys: ${this.endpointKeys.length ? this.endpointKeys.join(", ") : "(none)"}`);
             if (this.forwardMap.size) {
                 this.log.info(`Configured forward mappings: ${Array.from(this.forwardMap.entries())
-                    .map(([s, k]) => `${s}→${k}`)
+                    .map(([s, m]) => `${s}→${m.key}`)
                     .join(", ")}`);
                 for (const stateId of this.forwardMap.keys()) {
                     this.subscribeForeignStates(stateId);
@@ -165,7 +166,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             }
             if (this.reverseMap.size) {
                 this.log.info(`Configured reverse mappings: ${Array.from(this.reverseMap.entries())
-                    .map(([k, s]) => `${k}→${s}`)
+                    .map(([k, m]) => `${k}→${m.stateId}`)
                     .join(", ")}`);
             }
             // Pre-create configured endpoint states so they appear immediately in ioBroker
@@ -300,8 +301,15 @@ class GiraEndpointAdapter extends utils.Adapter {
                     await this.setStateAsync(id, { val: value, ack: true });
                     const mappedForeign = this.reverseMap.get(normalized);
                     if (mappedForeign) {
-                        this.log.debug(`Updating mapped foreign state ${mappedForeign} -> ${JSON.stringify(value)}`);
-                        await this.setForeignStateAsync(mappedForeign, { val: value, ack: true });
+                        let mappedVal = value;
+                        if (mappedForeign.bool) {
+                            if (typeof mappedVal === "number")
+                                mappedVal = mappedVal !== 0;
+                            else if (typeof mappedVal === "string")
+                                mappedVal = mappedVal !== "0";
+                        }
+                        this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
+                        await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
                     }
                 }
             });
@@ -352,28 +360,54 @@ class GiraEndpointAdapter extends utils.Adapter {
     onStateChange(id, state) {
         if (!state || !this.client)
             return;
-        const mappedKey = this.forwardMap.get(id);
-        if (mappedKey) {
+        const mapped = this.forwardMap.get(id);
+        if (mapped) {
             if (state.ack)
                 return;
             let uidValue = state.val;
             let ackVal = state.val;
-            if (typeof uidValue === "boolean") {
-                ackVal = uidValue ? 1 : 0;
-                uidValue = uidValue ? "1" : "0";
-            }
-            else if (typeof uidValue === "string") {
-                if (uidValue === "true" || uidValue === "false") {
-                    ackVal = uidValue === "true" ? 1 : 0;
-                    uidValue = uidValue === "true" ? "1" : "0";
+            if (mapped.bool) {
+                if (typeof uidValue === "boolean") {
+                    ackVal = uidValue ? 1 : 0;
+                    uidValue = uidValue ? "1" : "0";
                 }
-                else if (isNaN(Number(uidValue))) {
-                    uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+                else if (typeof uidValue === "number") {
+                    ackVal = uidValue;
+                    uidValue = uidValue ? "1" : "0";
+                }
+                else if (typeof uidValue === "string") {
+                    if (uidValue === "true" || uidValue === "false") {
+                        ackVal = uidValue === "true" ? 1 : 0;
+                        uidValue = uidValue === "true" ? "1" : "0";
+                    }
+                    else if (!isNaN(Number(uidValue))) {
+                        const num = Number(uidValue);
+                        ackVal = num;
+                        uidValue = num ? "1" : "0";
+                    }
+                    else {
+                        uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+                    }
                 }
             }
-            this.client.send({ type: "call", param: { key: mappedKey, method: "set", value: uidValue } });
-            const mappedId = this.keyIdMap.get(mappedKey) ?? `objekte.${this.sanitizeId(mappedKey)}`;
-            this.keyIdMap.set(mappedKey, mappedId);
+            else {
+                if (typeof uidValue === "boolean") {
+                    ackVal = uidValue ? 1 : 0;
+                    uidValue = uidValue ? "1" : "0";
+                }
+                else if (typeof uidValue === "string") {
+                    if (uidValue === "true" || uidValue === "false") {
+                        ackVal = uidValue === "true" ? 1 : 0;
+                        uidValue = uidValue === "true" ? "1" : "0";
+                    }
+                    else if (isNaN(Number(uidValue))) {
+                        uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+                    }
+                }
+            }
+            this.client.send({ type: "call", param: { key: mapped.key, method: "set", value: uidValue } });
+            const mappedId = this.keyIdMap.get(mapped.key) ?? `objekte.${this.sanitizeId(mapped.key)}`;
+            this.keyIdMap.set(mapped.key, mappedId);
             this.setState(mappedId, { val: ackVal, ack: true });
             return;
         }

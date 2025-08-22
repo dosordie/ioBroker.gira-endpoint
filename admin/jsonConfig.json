@@ -162,12 +162,12 @@
         },
         "mappingsHeader": {
           "type": "header",
-          "text": "Mapping fremder ioBroker States",
+          "text": "Liste der Homeserver Endpunkt IDs die abonniert werden und zusätzlich in einen anderes ioBroker Objekt geschrieben / von dort gelesen werden",
           "size": 2
         },
         "mappings": {
           "type": "table",
-          "label": "State-ID zu CO@ Mapping",
+          "label": "Hier die Endpunkt IDs und ioBroker Objekte eintragen",
           "xs": 12,
           "sm": 12,
           "md": 12,
@@ -187,13 +187,19 @@
             {
               "type": "checkbox",
               "attr": "toEndpoint",
-              "label": "Fremd → Endpoint",
+              "label": "ioBroker Objekt → Endpunkt",
               "default": true
             },
             {
               "type": "checkbox",
               "attr": "toState",
-              "label": "Endpoint → Fremd",
+              "label": "Endpunkt → ioBroker",
+              "default": false
+            },
+            {
+              "type": "checkbox",
+              "attr": "bool",
+              "label": "0/1 ↔ true/false",
               "default": false
             },
             {
