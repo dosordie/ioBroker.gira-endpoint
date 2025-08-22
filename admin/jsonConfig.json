@@ -157,6 +157,12 @@
               "type": "text",
               "attr": "name",
               "label": "Beschreibung"
+            },
+            {
+              "type": "checkbox",
+              "attr": "bool",
+              "label": "0/1 ↔ true/false",
+              "default": false
             }
           ]
         }
@@ -191,9 +197,14 @@
               "label": "CO@"
             },
             {
+              "type": "text",
+              "attr": "name",
+              "label": "Beschreibung"
+            },
+            {
               "type": "checkbox",
               "attr": "toEndpoint",
-              "label": "ioBroker Objekt → Endpunkt",
+              "label": "ioBroker → Endpunkt",
               "default": true
             },
             {
@@ -207,11 +218,6 @@
               "attr": "bool",
               "label": "0/1 ↔ true/false",
               "default": false
-            },
-            {
-              "type": "text",
-              "attr": "name",
-              "label": "Beschreibung"
             }
           ]
         }

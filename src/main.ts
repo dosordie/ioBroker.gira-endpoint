@@ -16,7 +16,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   cert?: string;
   key?: string;
   rejectUnauthorized?: boolean;
-  endpointKeys?: string[] | { key: string; name?: string }[] | string;
+  endpointKeys?: string[] | { key: string; name?: string; bool?: boolean }[] | string;
   updateLastEvent?: boolean;
   mappings?: {
     stateId: string;
@@ -95,6 +95,8 @@ class GiraEndpointAdapter extends utils.Adapter {
       const password = String(cfg.password ?? "");
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
 
+      const boolKeys = new Set<string>();
+
       const rawKeys = cfg.endpointKeys;
       const endpointKeys: string[] = [];
       if (Array.isArray(rawKeys)) {
@@ -104,6 +106,8 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (!key) continue;
             const name = String((k as any).name ?? "").trim();
             if (name) this.keyDescMap.set(key, name);
+            const bool = Boolean((k as any).bool);
+            if (bool) boolKeys.add(key);
             endpointKeys.push(key);
           } else {
             const key = this.normalizeKey(String(k).trim());
@@ -122,7 +126,6 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       const forwardMap = new Map<string, { key: string; bool: boolean }>();
       const reverseMap = new Map<string, { stateId: string; bool: boolean }>();
-      const boolKeys = new Set<string>();
       if (Array.isArray(cfg.mappings)) {
         for (const m of cfg.mappings) {
           if (typeof m !== "object" || !m) continue;
