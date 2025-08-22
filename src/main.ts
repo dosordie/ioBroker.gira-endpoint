@@ -35,6 +35,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private keyDescMap = new Map<string, string>();
   private forwardMap = new Map<string, { key: string; bool: boolean }>();
   private reverseMap = new Map<string, { stateId: string; bool: boolean }>();
+  private boolKeys = new Set<string>();
 
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
@@ -119,6 +120,7 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       const forwardMap = new Map<string, { key: string; bool: boolean }>();
       const reverseMap = new Map<string, { stateId: string; bool: boolean }>();
+      const boolKeys = new Set<string>();
       if (Array.isArray(cfg.mappings)) {
         for (const m of cfg.mappings) {
           if (typeof m !== "object" || !m) continue;
@@ -132,15 +134,18 @@ class GiraEndpointAdapter extends utils.Adapter {
           const bool = Boolean((m as any).bool);
           if (toEndpoint) {
             forwardMap.set(stateId, { key, bool });
+            if (bool) boolKeys.add(key);
           }
           if (toState) {
             reverseMap.set(key, { stateId, bool });
+            if (bool) boolKeys.add(key);
           }
           if (!endpointKeys.includes(key)) endpointKeys.push(key);
         }
       }
       this.forwardMap = forwardMap;
       this.reverseMap = reverseMap;
+      this.boolKeys = boolKeys;
 
       for (const key of endpointKeys) {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
@@ -284,13 +289,21 @@ class GiraEndpointAdapter extends utils.Adapter {
           const id =
             this.keyIdMap.get(normalized) ?? `objekte.${this.sanitizeId(normalized)}`;
           this.keyIdMap.set(normalized, id);
+          const boolKey = this.boolKeys.has(normalized);
           let value: any = val;
           let type: ioBroker.StateCommon["type"] = "mixed";
-          if (typeof val === "boolean") {
-            type = "number";
-            value = val ? 1 : 0;
-          } else if (typeof val === "number") type = "number";
-          else if (typeof val === "string") type = "string";
+          if (boolKey) {
+            type = "boolean";
+            if (typeof val === "number") value = val !== 0;
+            else if (typeof val === "string") value = val !== "0";
+            else value = Boolean(val);
+          } else {
+            if (typeof val === "boolean") {
+              type = "number";
+              value = val ? 1 : 0;
+            } else if (typeof val === "number") type = "number";
+            else if (typeof val === "string") type = "string";
+          }
           const name = this.keyDescMap.get(normalized) || normalized;
           this.keyDescMap.set(normalized, name);
           await this.extendObjectAsync(id, {
@@ -372,20 +385,21 @@ class GiraEndpointAdapter extends utils.Adapter {
       let ackVal: any = state.val;
       if (mapped.bool) {
         if (typeof uidValue === "boolean") {
-          ackVal = uidValue ? 1 : 0;
+          ackVal = uidValue;
           uidValue = uidValue ? "1" : "0";
         } else if (typeof uidValue === "number") {
-          ackVal = uidValue;
+          ackVal = uidValue !== 0;
           uidValue = uidValue ? "1" : "0";
         } else if (typeof uidValue === "string") {
           if (uidValue === "true" || uidValue === "false") {
-            ackVal = uidValue === "true" ? 1 : 0;
-            uidValue = uidValue === "true" ? "1" : "0";
+            ackVal = uidValue === "true";
+            uidValue = ackVal ? "1" : "0";
           } else if (!isNaN(Number(uidValue))) {
             const num = Number(uidValue);
-            ackVal = num;
+            ackVal = num !== 0;
             uidValue = num ? "1" : "0";
           } else {
+            ackVal = uidValue;
             uidValue = Buffer.from(uidValue, "utf8").toString("base64");
           }
         }
@@ -431,18 +445,44 @@ class GiraEndpointAdapter extends utils.Adapter {
     let uidValue: any = state.val;
     let method = "set";
     let ackVal: any = state.val;
-    if (typeof uidValue === "boolean") {
-      ackVal = uidValue ? 1 : 0;
-      uidValue = uidValue ? "1" : "0";
-    } else if (typeof uidValue === "string") {
-      if (uidValue === "true" || uidValue === "false") {
-        ackVal = uidValue === "true" ? 1 : 0;
-        uidValue = uidValue === "true" ? "1" : "0";
-      } else if (uidValue === "toggle") {
-        uidValue = "1";
-        method = "toggle";
-      } else if (isNaN(Number(uidValue))) {
-        uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+    const boolKey = this.boolKeys.has(this.normalizeKey(key));
+    if (boolKey) {
+      if (typeof uidValue === "boolean") {
+        ackVal = uidValue;
+        uidValue = uidValue ? "1" : "0";
+      } else if (typeof uidValue === "number") {
+        ackVal = uidValue !== 0;
+        uidValue = uidValue ? "1" : "0";
+      } else if (typeof uidValue === "string") {
+        if (uidValue === "true" || uidValue === "false") {
+          ackVal = uidValue === "true";
+          uidValue = ackVal ? "1" : "0";
+        } else if (uidValue === "toggle") {
+          uidValue = "1";
+          method = "toggle";
+        } else if (!isNaN(Number(uidValue))) {
+          const num = Number(uidValue);
+          ackVal = num !== 0;
+          uidValue = num ? "1" : "0";
+        } else {
+          ackVal = uidValue;
+          uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+        }
+      }
+    } else {
+      if (typeof uidValue === "boolean") {
+        ackVal = uidValue ? 1 : 0;
+        uidValue = uidValue ? "1" : "0";
+      } else if (typeof uidValue === "string") {
+        if (uidValue === "true" || uidValue === "false") {
+          ackVal = uidValue === "true" ? 1 : 0;
+          uidValue = uidValue === "true" ? "1" : "0";
+        } else if (uidValue === "toggle") {
+          uidValue = "1";
+          method = "toggle";
+        } else if (isNaN(Number(uidValue))) {
+          uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+        }
       }
     }
     this.client.send({ type: "call", param: { key, method, value: uidValue } });

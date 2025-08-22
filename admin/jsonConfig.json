@@ -132,7 +132,7 @@
     },
     "keysTab": {
       "type": "panel",
-      "label": "Endpunkte",
+      "label": "Einfache Endpunkte",
       "items": {
         "subscriptionHeader": {
           "type": "header",
@@ -159,7 +159,13 @@
               "label": "Beschreibung"
             }
           ]
-        },
+        }
+      }
+    },
+    "mappingTab": {
+      "type": "panel",
+      "label": "Mapping Endpunkte",
+      "items": {
         "mappingsHeader": {
           "type": "header",
           "text": "Liste der Homeserver Endpunkt IDs die abonniert werden und zusätzlich in einen anderes ioBroker Objekt geschrieben / von dort gelesen werden",
