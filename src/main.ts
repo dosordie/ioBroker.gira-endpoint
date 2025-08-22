@@ -304,23 +304,19 @@ class GiraEndpointAdapter extends utils.Adapter {
             else if (typeof val === "string") type = "string";
           }
 
-          const pending = this.pendingUpdates.get(normalized);
-          if (
-            pending !== undefined &&
-            (pending === value || pending == (value as any))
-          ) {
-          if (pending !== undefined && pending === value) {
-            this.log.debug(
-              `Ignoring echoed event for ${normalized} -> ${JSON.stringify(value)}`
-            );
+            const pending = this.pendingUpdates.get(normalized);
+            if (pending !== undefined && pending === value) {
+              this.log.debug(
+                `Ignoring echoed event for ${normalized} -> ${JSON.stringify(value)}`
+              );
+              this.pendingUpdates.delete(normalized);
+              continue;
+            }
             this.pendingUpdates.delete(normalized);
-            continue;
-          }
-          this.pendingUpdates.delete(normalized);
 
-          const id =
-            this.keyIdMap.get(normalized) ?? `objekte.${this.sanitizeId(normalized)}`;
-          this.keyIdMap.set(normalized, id);
+            const id =
+              this.keyIdMap.get(normalized) ?? `objekte.${this.sanitizeId(normalized)}`;
+            this.keyIdMap.set(normalized, id);
           const name = this.keyDescMap.get(normalized) || normalized;
           this.keyDescMap.set(normalized, name);
           await this.extendObjectAsync(id, {
