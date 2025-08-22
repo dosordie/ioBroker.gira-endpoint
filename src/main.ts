@@ -11,7 +11,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   username?: string;
   password?: string;
   pingIntervalMs?: number;
-  reconnect?: { minMs?: number; maxMs?: number; factor?: number; jitter?: number };
+  reconnect?: { minMs?: number; maxMs?: number };
   ca?: string;
   cert?: string;
   key?: string;
@@ -148,8 +148,6 @@ class GiraEndpointAdapter extends utils.Adapter {
         reconnect: {
           minMs: cfg.reconnect?.minMs ?? 1000,
           maxMs: cfg.reconnect?.maxMs ?? 30000,
-          factor: cfg.reconnect?.factor ?? 1.7,
-          jitter: cfg.reconnect?.jitter ?? 0.2,
         },
         tls,
       });

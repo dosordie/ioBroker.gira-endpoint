@@ -14,15 +14,13 @@
         "username": { "type": "text", "label": "Benutzername", "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
         "password": { "type": "password", "label": "Passwort", "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
         "settingsHeader": { "type": "header", "text": "Verbindungseinstellungen", "size": 2 },
-        "pingIntervalMs": { "type": "number", "label": "Ping-Intervall (ms)", "min": 0, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
+        "pingIntervalMs": { "type": "number", "label": "Ping-Intervall (ms)", "min": 0, "default": 30000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
         "reconnect": {
           "type": "panel",
           "label": "Reconnect",
           "items": {
-            "minMs": { "type": "number", "label": "Reconnect min (ms)", "min": 200, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
-            "maxMs": { "type": "number", "label": "Reconnect max (ms)", "min": 1000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
-            "factor": { "type": "number", "label": "Backoff-Faktor", "min": 1, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
-            "jitter": { "type": "number", "label": "Jitter (0..1)", "min": 0, "max": 1, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 }
+            "minMs": { "type": "number", "label": "Reconnect min (ms)", "min": 200, "default": 1000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 },
+            "maxMs": { "type": "number", "label": "Reconnect max (ms)", "min": 1000, "default": 30000, "xs": 12, "sm": 6, "md": 6, "lg": 4, "xl": 4 }
           }
         }
       }

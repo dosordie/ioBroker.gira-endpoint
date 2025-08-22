@@ -8,6 +8,8 @@ const events_1 = require("events");
 const ws_1 = __importDefault(require("ws"));
 // Kein Listener-Limit (verhindert MaxListeners-Warnungen global hier)
 events_1.EventEmitter.defaultMaxListeners = 0;
+const BACKOFF_FACTOR = 1.7;
+const BACKOFF_JITTER = 0.2;
 class GiraClient extends events_1.EventEmitter {
     constructor(opts) {
         super();
@@ -21,10 +23,12 @@ class GiraClient extends events_1.EventEmitter {
             username: "",
             password: "",
             pingIntervalMs: 30000,
-            reconnect: { minMs: 1000, maxMs: 30000, factor: 1.7, jitter: 0.2 },
+            reconnect: { minMs: 1000, maxMs: 30000 },
             tls: {},
         };
-        this.opts = Object.assign({}, defaults, opts);
+        this.opts = Object.assign({}, defaults, opts, {
+            reconnect: Object.assign({}, defaults.reconnect, opts.reconnect),
+        });
         this.backoffMs = this.opts.reconnect.minMs;
     }
     connect() {
@@ -153,14 +157,14 @@ class GiraClient extends events_1.EventEmitter {
         this.pingTimer = undefined;
     }
     scheduleReconnect() {
-        const { maxMs, factor, jitter } = this.opts.reconnect;
-        const jitterDelta = this.backoffMs * jitter * (Math.random() * 2 - 1);
+        const { maxMs } = this.opts.reconnect;
+        const jitterDelta = this.backoffMs * BACKOFF_JITTER * (Math.random() * 2 - 1);
         const delay = Math.min(maxMs, Math.max(0, this.backoffMs + jitterDelta));
         setTimeout(() => {
             if (!this.closedByUser)
                 this.connect();
         }, delay);
-        this.backoffMs = Math.min(maxMs, Math.max(this.opts.reconnect.minMs, this.backoffMs * factor));
+        this.backoffMs = Math.min(maxMs, Math.max(this.opts.reconnect.minMs, this.backoffMs * BACKOFF_FACTOR));
     }
 }
 exports.GiraClient = GiraClient;
