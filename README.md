@@ -30,7 +30,12 @@ Der Adapter wurde nachgebaut auf Basis von:
 ## Lizenz
 [GPLv3](LICENSE)
 
-## Installation (lokal)
+## Installation (Github) *Empfohlen*
+
+Bis der Adapter Offiziell ist:
+Im ioBroker unter Adapter auf den Expertenmodus schalten, Github anklicken und https://github.com/dosordie/ioBroker.gira-endpoint/ bei Benutzerdefiniert eintragen
+
+## Installation (lokal) *Für test ect.*
 
 ```bash
 Variante A (empfohlen): per Tarball installieren 
