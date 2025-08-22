@@ -156,8 +156,6 @@ class GiraEndpointAdapter extends utils.Adapter {
                 reconnect: {
                     minMs: cfg.reconnect?.minMs ?? 1000,
                     maxMs: cfg.reconnect?.maxMs ?? 30000,
-                    factor: cfg.reconnect?.factor ?? 1.7,
-                    jitter: cfg.reconnect?.jitter ?? 0.2,
                 },
                 tls,
             });

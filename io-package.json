@@ -47,9 +47,7 @@
     "pingIntervalMs": 30000,
     "reconnect": {
       "minMs": 1000,
-      "maxMs": 30000,
-      "factor": 1.7,
-      "jitter": 0.2
+      "maxMs": 30000
     },
     "ca": "",
     "cert": "",
