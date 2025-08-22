@@ -1,14 +1,29 @@
-# ioBroker.gira-endpoint
+# ioBroker Gira-Endpoint Adapter
 
-Minimaler Gira-Endpoint-Adapter (WS/WSS-Client). Reconnect mit Backoff, Events → States, kein MaxListeners-Warnspam.
+Der Gira-Endpoint-Adapter ermöglicht die Anbindung eines Gira Homeservers an ioBroker über WebSocket (WS/WSS).
+Er verbindet sich direkt mit dem Homeserver und erlaubt so den Austausch von Datenpunkten in Echtzeit.
 
-Basis:
-https://github.com/luckyy0815/node-red-contrib-gira-endpoint
+Damit können Werte wie Schaltzustände, Sensoren oder Szenen aus dem Gira-System nahtlos in ioBroker integriert und weiterverarbeitet werden.
+
+Funktionen
+
+Verbindung per WebSocket oder WebSocket Secure (WSS)
+
+Empfang und Senden von Datenpunkten zwischen Gira Homeserver und ioBroker
+
+Echtzeitkommunikation für schnelle Reaktionen und Automatisierungen
+
+Einfache Integration in bestehende Smart-Home-Szenarien
+
+Grundlage
+
+Der Adapter wurde inspiriert und umgesetzt auf Basis von
+👉 node-red-contrib-gira-endpoint
 
 ## Installation (lokal)
 
 ```bash
-Variante A (empfohlen): per Tarball installieren *geht*
+Variante A (empfohlen): per Tarball installieren 
 # im Projektordner
 cd ~/iobroker.gira-endpoint
 git pull --ff-only
@@ -23,25 +38,6 @@ sudo -u iobroker -H npm i --omit=dev ~/iobroker.gira-endpoint/iobroker.gira-endp
 iobroker upload gira-endpoint
 ## optional hinzufügen
 #iobroker add gira-endpoint
-
-
-Variante B: per npm link (für Dev bequem)
-# im Projektordner
-cd ~/iobroker.gira-endpoint
-npm link
-
-# ins ioBroker-Verzeichnis und verlinken
-cd /opt/iobroker
-sudo -u iobroker -H npm link iobroker.gira-endpoint
-
-iobroker upload gira-endpoint
-iobroker add gira-endpoint
-
-Alternative: dev-server (ohne Installation testen)
-npm i -g @iobroker/dev-server
-cd ~/iobroker.gira-endpoint
-dev-server setup
-dev-server watch
 
 ```
 
