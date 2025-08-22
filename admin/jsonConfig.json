@@ -28,12 +28,12 @@
       },
       "keysTab": {
       "type": "panel",
-      "label": "Keys",
+      "label": "Endpunkt IDs",
       "items": {
-        "subscriptionHeader": { "type": "header", "text": "Subscription", "size": 2 },
+        "subscriptionHeader": { "type": "header", "text": "Liste der Homeserver Endpunkt IDs welche abonniert werden", "size": 2 },
         "endpointKeys": {
           "type": "table",
-          "label": "Endpoint-Keys",
+          "label": "Hier die Endpunkt IDs ohne das CO@ eingeben",
           "items": [
             { "type": "text", "attr": "key", "label": "CO@" },
             { "type": "text", "attr": "name", "label": "Beschreibung" }
