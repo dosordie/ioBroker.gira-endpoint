@@ -96,6 +96,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             const username = String(cfg.username ?? "");
             const password = String(cfg.password ?? "");
             const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
+            const boolKeys = new Set();
             const rawKeys = cfg.endpointKeys;
             const endpointKeys = [];
             if (Array.isArray(rawKeys)) {
@@ -107,6 +108,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const name = String(k.name ?? "").trim();
                         if (name)
                             this.keyDescMap.set(key, name);
+                        const bool = Boolean(k.bool);
+                        if (bool)
+                            boolKeys.add(key);
                         endpointKeys.push(key);
                     }
                     else {
@@ -127,7 +131,6 @@ class GiraEndpointAdapter extends utils.Adapter {
             }
             const forwardMap = new Map();
             const reverseMap = new Map();
-            const boolKeys = new Set();
             if (Array.isArray(cfg.mappings)) {
                 for (const m of cfg.mappings) {
                     if (typeof m !== "object" || !m)
