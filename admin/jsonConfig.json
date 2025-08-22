@@ -28,7 +28,7 @@
       },
       "keysTab": {
       "type": "panel",
-      "label": "Endpunkt IDs",
+      "label": "Endpunkte",
       "items": {
         "subscriptionHeader": { "type": "header", "text": "Liste der Homeserver Endpunkt IDs die abonniert werden", "size": 2 },
         "endpointKeys": {
