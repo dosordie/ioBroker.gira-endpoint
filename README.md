@@ -1,3 +1,5 @@
+![Logo](admin/gira-endpoint.svg)
+
 # ioBroker Gira-Endpoint Adapter
 ## Gira Endpoint Adapter
 
