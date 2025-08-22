@@ -6,7 +6,7 @@
   "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dosordie/iobroker.gira-endpoint.git"
+    "url": "https://github.com/dosordie/ioBroker.gira-endpoint.git"
   },
   "main": "build/main.js",
   "scripts": {
