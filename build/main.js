@@ -47,6 +47,8 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.forwardMap = new Map();
         this.reverseMap = new Map();
         this.boolKeys = new Set();
+        this.suppressStateChange = new Set();
+        this.pendingUpdates = new Map();
         this.on("ready", this.onReady.bind(this));
         this.on("unload", this.onUnload.bind(this));
         this.on("stateChange", this.onStateChange.bind(this));
@@ -284,8 +286,6 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }
                 for (const { key, value: val } of entries) {
                     const normalized = this.normalizeKey(key);
-                    const id = this.keyIdMap.get(normalized) ?? `objekte.${this.sanitizeId(normalized)}`;
-                    this.keyIdMap.set(normalized, id);
                     const boolKey = this.boolKeys.has(normalized);
                     let value = val;
                     let type = "mixed";
@@ -308,6 +308,15 @@ class GiraEndpointAdapter extends utils.Adapter {
                         else if (typeof val === "string")
                             type = "string";
                     }
+                    const pending = this.pendingUpdates.get(normalized);
+                    if (pending !== undefined && pending === value) {
+                        this.log.debug(`Ignoring echoed event for ${normalized} -> ${JSON.stringify(value)}`);
+                        this.pendingUpdates.delete(normalized);
+                        continue;
+                    }
+                    this.pendingUpdates.delete(normalized);
+                    const id = this.keyIdMap.get(normalized) ?? `objekte.${this.sanitizeId(normalized)}`;
+                    this.keyIdMap.set(normalized, id);
                     const name = this.keyDescMap.get(normalized) || normalized;
                     this.keyDescMap.set(normalized, name);
                     await this.extendObjectAsync(id, {
@@ -328,7 +337,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                                 mappedVal = mappedVal !== "0";
                         }
                         this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
+                        this.suppressStateChange.add(mappedForeign.stateId);
                         await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
+                        setTimeout(() => this.suppressStateChange.delete(mappedForeign.stateId), 1000);
                     }
                 }
             });
@@ -381,6 +392,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             return;
         const mapped = this.forwardMap.get(id);
         if (mapped) {
+            if (this.suppressStateChange.has(id)) {
+                this.log.debug(`Ignoring state change for ${id} because it was just updated from endpoint`);
+                return;
+            }
             if (state.ack)
                 return;
             let uidValue = state.val;
@@ -429,6 +444,8 @@ class GiraEndpointAdapter extends utils.Adapter {
             const mappedId = this.keyIdMap.get(mapped.key) ?? `objekte.${this.sanitizeId(mapped.key)}`;
             this.keyIdMap.set(mapped.key, mappedId);
             this.setState(mappedId, { val: ackVal, ack: true });
+            this.pendingUpdates.set(mapped.key, ackVal);
+            setTimeout(() => this.pendingUpdates.delete(mapped.key), 1000);
             return;
         }
         if (state.ack)
@@ -505,7 +522,24 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }
             }
         }
+        const normKey = this.normalizeKey(key);
         this.client.send({ type: "call", param: { key, method, value: uidValue } });
+        const mappedForeign = this.reverseMap.get(normKey);
+        if (mappedForeign) {
+            let mappedVal = ackVal;
+            if (mappedForeign.bool) {
+                if (typeof mappedVal === "number")
+                    mappedVal = mappedVal !== 0;
+                else if (typeof mappedVal === "string")
+                    mappedVal = mappedVal !== "0";
+            }
+            this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
+            this.suppressStateChange.add(mappedForeign.stateId);
+            this.setForeignState(mappedForeign.stateId, { val: mappedVal, ack: true });
+            setTimeout(() => this.suppressStateChange.delete(mappedForeign.stateId), 1000);
+        }
+        this.pendingUpdates.set(normKey, ackVal);
+        setTimeout(() => this.pendingUpdates.delete(normKey), 1000);
         this.setState(id, { val: ackVal, ack: true });
     }
 }
