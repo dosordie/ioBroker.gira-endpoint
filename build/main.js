@@ -1,0 +1,357 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+const utils = __importStar(require("@iobroker/adapter-core"));
+const GiraClient_1 = require("./lib/GiraClient");
+class GiraEndpointAdapter extends utils.Adapter {
+    constructor(options = {}) {
+        super({
+            ...options,
+            name: "gira-endpoint",
+        });
+        this.endpointKeys = [];
+        this.keyIdMap = new Map();
+        this.keyDescMap = new Map();
+        this.on("ready", this.onReady.bind(this));
+        this.on("unload", this.onUnload.bind(this));
+        this.on("stateChange", this.onStateChange.bind(this));
+    }
+    async onReady() {
+        try {
+            await this.setObjectNotExistsAsync("info", {
+                type: "channel",
+                common: { name: "Info" },
+                native: {},
+            });
+            await this.setObjectNotExistsAsync("info.connection", {
+                type: "state",
+                common: {
+                    name: "Connection",
+                    type: "boolean",
+                    role: "indicator.connected",
+                    read: true,
+                    write: false,
+                },
+                native: {},
+            });
+            await this.setObjectNotExistsAsync("info.lastError", {
+                type: "state",
+                common: { name: "Last error", type: "string", role: "text", read: true, write: false },
+                native: {},
+            });
+            await this.setObjectNotExistsAsync("info.lastEvent", {
+                type: "state",
+                common: { name: "Last event", type: "string", role: "json", read: true, write: false },
+                native: {},
+            });
+            await this.setStateAsync("info.connection", { val: false, ack: true });
+            this.log.debug("Pre-created info states");
+            await this.setObjectNotExistsAsync("objekte", {
+                type: "channel",
+                common: { name: "Objekte" },
+                native: {},
+            });
+            const cfg = this.config;
+            const host = String(cfg.host ?? "").trim();
+            const port = Number(cfg.port ?? 80);
+            const ssl = Boolean(cfg.ssl ?? false);
+            const path = String(cfg.path ?? "/endpoints/ws").trim() || "/endpoints/ws";
+            const username = String(cfg.username ?? "");
+            const password = String(cfg.password ?? "");
+            const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
+            const rawKeys = cfg.endpointKeys;
+            const endpointKeys = [];
+            if (Array.isArray(rawKeys)) {
+                for (const k of rawKeys) {
+                    if (typeof k === "object" && k) {
+                        const key = this.normalizeKey(String(k.key ?? "").trim());
+                        if (!key)
+                            continue;
+                        const name = String(k.name ?? "").trim();
+                        if (name)
+                            this.keyDescMap.set(key, name);
+                        endpointKeys.push(key);
+                    }
+                    else {
+                        const key = this.normalizeKey(String(k).trim());
+                        if (!key)
+                            continue;
+                        endpointKeys.push(key);
+                    }
+                }
+            }
+            else {
+                const arr = String(rawKeys ?? "")
+                    .split(/[,;\s]+/)
+                    .map((k) => k.trim())
+                    .filter((k) => k)
+                    .map((k) => this.normalizeKey(k));
+                endpointKeys.push(...arr);
+            }
+            for (const key of endpointKeys) {
+                if (!this.keyDescMap.has(key))
+                    this.keyDescMap.set(key, key);
+            }
+            this.endpointKeys = endpointKeys;
+            this.log.info(`Configured endpoint keys: ${this.endpointKeys.length ? this.endpointKeys.join(", ") : "(none)"}`);
+            // Pre-create configured endpoint states so they appear immediately in ioBroker
+            for (const key of this.endpointKeys) {
+                const id = `objekte.${this.sanitizeId(key)}`;
+                this.keyIdMap.set(key, id);
+                const name = this.keyDescMap.get(key) || key;
+                await this.setObjectNotExistsAsync(id, {
+                    type: "state",
+                    common: { name, type: "mixed", role: "state", read: true, write: true },
+                    native: {},
+                });
+                this.log.debug(`Pre-created endpoint state ${id}`);
+                this.subscribeStates(id);
+            }
+            const ca = cfg.ca ? String(cfg.ca) : undefined;
+            const cert = cfg.cert ? String(cfg.cert) : undefined;
+            const key = cfg.key ? String(cfg.key) : undefined;
+            const rejectUnauthorized = cfg.rejectUnauthorized !== undefined ? Boolean(cfg.rejectUnauthorized) : undefined;
+            const tls = { ca, cert, key, rejectUnauthorized };
+            // Instantiate client once with all relevant options
+            this.client = new GiraClient_1.GiraClient({
+                host,
+                port,
+                ssl,
+                path,
+                username,
+                password,
+                pingIntervalMs,
+                reconnect: {
+                    minMs: cfg.reconnect?.minMs ?? 1000,
+                    maxMs: cfg.reconnect?.maxMs ?? 30000,
+                    factor: cfg.reconnect?.factor ?? 1.7,
+                    jitter: cfg.reconnect?.jitter ?? 0.2,
+                },
+                tls,
+            });
+            this.client.on("open", () => {
+                this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);
+                this.setState("info.connection", true, true);
+                if (this.endpointKeys.length) {
+                    this.client.subscribe(this.endpointKeys);
+                }
+                else {
+                    this.log.info("Subscribing to all endpoint events (no keys configured)");
+                    this.client.subscribe([]);
+                }
+            });
+            this.client.on("close", (info) => {
+                this.log.warn(`Connection closed (${info?.code || "?"}) ${info?.reason || ""}`);
+                this.setState("info.connection", false, true);
+            });
+            this.client.on("error", (err) => {
+                this.log.error(`Client error: ${err?.message || err}`);
+                this.setState("info.lastError", String(err?.message || err), true);
+            });
+            this.client.on("event", async (payload) => {
+                // Provide full event information for debugging
+                this.log.debug(`Received event: ${JSON.stringify(payload)}`);
+                await this.setStateAsync("info.lastEvent", {
+                    val: JSON.stringify(payload),
+                    ack: true,
+                });
+                const data = payload?.data;
+                if (!data)
+                    return;
+                const entries = [];
+                // Case 1: subscription result lists multiple items
+                if (typeof data === "object" && Array.isArray(data.items)) {
+                    for (const item of data.items) {
+                        if (!item)
+                            continue;
+                        const key = item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
+                        if (key === undefined)
+                            continue;
+                        const value = item.data?.value !== undefined ? item.data.value : item.data ?? item.value;
+                        entries.push({ key, value });
+                    }
+                    // Case 2: push event with subscription key
+                }
+                else if (payload?.subscription?.key && typeof data === "object" && "value" in data) {
+                    entries.push({ key: String(payload.subscription.key), value: data.value });
+                    // Case 3: array of events
+                }
+                else if (Array.isArray(data)) {
+                    for (const item of data) {
+                        if (!item)
+                            continue;
+                        const key = item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
+                        if (key === undefined)
+                            continue;
+                        entries.push({ key, value: item.value });
+                    }
+                    // Case 4: object containing key/uid or generic key-value pairs
+                }
+                else if (typeof data === "object") {
+                    if (data.uid !== undefined || data.key !== undefined) {
+                        const key = data.uid !== undefined ? String(data.uid) : String(data.key);
+                        const value = data.data?.value !== undefined ? data.data.value : data.value;
+                        entries.push({ key, value });
+                    }
+                    else {
+                        for (const [key, val] of Object.entries(data)) {
+                            const value = val?.value !== undefined ? val.value : val;
+                            entries.push({ key, value });
+                        }
+                    }
+                }
+                for (const { key, value: val } of entries) {
+                    const normalized = this.normalizeKey(key);
+                    const id = this.keyIdMap.get(normalized) ?? `objekte.${this.sanitizeId(normalized)}`;
+                    this.keyIdMap.set(normalized, id);
+                    let value = val;
+                    let type = "mixed";
+                    if (typeof val === "boolean") {
+                        type = "number";
+                        value = val ? 1 : 0;
+                    }
+                    else if (typeof val === "number")
+                        type = "number";
+                    else if (typeof val === "string")
+                        type = "string";
+                    const name = this.keyDescMap.get(normalized) || normalized;
+                    this.keyDescMap.set(normalized, name);
+                    await this.extendObjectAsync(id, {
+                        type: "state",
+                        common: { name, type, role: "state", read: true, write: true },
+                        native: {},
+                    });
+                    this.subscribeStates(id);
+                    this.log.debug(`Updating state ${id} -> ${JSON.stringify(value)}`);
+                    await this.setStateAsync(id, { val: value, ack: true });
+                }
+            });
+            await this.setObjectNotExistsAsync("control", {
+                type: "channel",
+                common: { name: "Control" },
+                native: {},
+            });
+            await this.setObjectNotExistsAsync("control.subscribe", {
+                type: "state",
+                common: { name: "Subscribe keys", type: "string", role: "state", read: false, write: true },
+                native: {},
+            });
+            await this.setObjectNotExistsAsync("control.unsubscribe", {
+                type: "state",
+                common: { name: "Unsubscribe keys", type: "string", role: "state", read: false, write: true },
+                native: {},
+            });
+            this.log.debug("Created control states");
+            this.subscribeStates("control.subscribe");
+            this.subscribeStates("control.unsubscribe");
+            this.client.connect();
+        }
+        catch (e) {
+            this.log.error(`onReady failed: ${e?.message || e}`);
+        }
+    }
+    normalizeKey(k) {
+        k = k.trim().toUpperCase();
+        return k.startsWith("CO@") ? k : `CO@${k}`;
+    }
+    sanitizeId(s) {
+        return s.replace(/[^a-z0-9@_\-\.]/gi, "_").toUpperCase();
+    }
+    async onUnload(callback) {
+        try {
+            this.log.info("Shutting down...");
+            this.client?.removeAllListeners();
+            this.client?.close();
+        }
+        catch (e) {
+            this.log.error(`onUnload error: ${e}`);
+        }
+        finally {
+            callback();
+        }
+    }
+    onStateChange(id, state) {
+        if (!state || state.ack || !this.client)
+            return;
+        const key = id.split(".").pop();
+        if (!key)
+            return;
+        if (key === "subscribe" || key === "unsubscribe") {
+            const keys = String(state.val || "")
+                .split(/[,;\s]+/)
+                .map((k) => k.trim())
+                .filter((k) => k)
+                .map((k) => this.normalizeKey(k));
+            if (!keys.length)
+                return;
+            if (key === "subscribe") {
+                this.client.subscribe(keys);
+            }
+            else {
+                this.client.unsubscribe(keys);
+            }
+            this.setState(id, { val: state.val, ack: true });
+            return;
+        }
+        let uidValue = state.val;
+        let method = "set";
+        let ackVal = state.val;
+        if (typeof uidValue === "boolean") {
+            ackVal = uidValue ? 1 : 0;
+            uidValue = uidValue ? "1" : "0";
+        }
+        else if (typeof uidValue === "string") {
+            if (uidValue === "true" || uidValue === "false") {
+                ackVal = uidValue === "true" ? 1 : 0;
+                uidValue = uidValue === "true" ? "1" : "0";
+            }
+            else if (uidValue === "toggle") {
+                uidValue = "1";
+                method = "toggle";
+            }
+            else if (isNaN(Number(uidValue))) {
+                uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+            }
+        }
+        this.client.send({ type: "call", param: { key, method, value: uidValue } });
+        this.setState(id, { val: ackVal, ack: true });
+    }
+}
+if (module.parent) {
+    module.exports = (options) => new GiraEndpointAdapter(options);
+}
+else {
+    (() => new GiraEndpointAdapter())();
+}

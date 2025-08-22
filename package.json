@@ -4,6 +4,10 @@
   "description": "ioBroker adapter for Gira endpoint (WS/WSS) – emits events as states, minimal viable replacement for Node-RED Gira node",
   "author": "you",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dosordie/ioBroker.gira-endpoint"
+  },
   "main": "build/main.js",
   "scripts": {
     "build": "tsc -p .",
@@ -13,14 +17,28 @@
   "engines": {
     "node": ">=18"
   },
+  "keywords": [
+    "iobroker",
+    "gira",
+    "websocket",
+    "smarthome"
+  ],
   "dependencies": {
-    "@iobroker/adapter-core": "^3.1.0",
+    "@iobroker/adapter-core": "^3.2.2",
     "ws": "^8.18.0",
     "https-proxy-agent": "^7.0.2"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",
     "@types/ws": "^8.5.10",
-    "typescript": "^5.5.4"
-  }
+    "typescript": "^5.5.4",
+    "@iobroker/testing": "4.1.3"
+  },
+  "files": [
+    "build/",
+    "admin/",
+    "io-package.json",
+    "LICENSE",
+    "README.md"
+  ]
 }
