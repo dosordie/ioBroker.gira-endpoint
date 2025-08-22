@@ -36,6 +36,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private forwardMap = new Map<string, { key: string; bool: boolean }>();
   private reverseMap = new Map<string, { stateId: string; bool: boolean }>();
   private boolKeys = new Set<string>();
+  private suppressStateChange = new Set<string>();
 
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
@@ -324,7 +325,9 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.log.debug(
               `Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`
             );
+            this.suppressStateChange.add(mappedForeign.stateId);
             await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
+            setTimeout(() => this.suppressStateChange.delete(mappedForeign.stateId), 1000);
           }
         }
       });
@@ -380,6 +383,10 @@ class GiraEndpointAdapter extends utils.Adapter {
 
     const mapped = this.forwardMap.get(id);
     if (mapped) {
+      if (this.suppressStateChange.has(id)) {
+        this.log.debug(`Ignoring state change for ${id} because it was just updated from endpoint`);
+        return;
+      }
       if (state.ack) return;
       let uidValue: any = state.val;
       let ackVal: any = state.val;
