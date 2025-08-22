@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "news": {
+      "0.2.0": {
+        "en": "Add configurable mapping between ioBroker states and Gira endpoints",
+        "de": "Konfigurierbares Mapping zwischen ioBroker-States und Gira-Endpunkten hinzugefügt"
+      },
       "0.1.0": {
         "en": "Adapter basically working and tested",
         "de": "Adapter grob lauffähig und getestet"
