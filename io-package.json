@@ -27,7 +27,7 @@
     "extIcon": "https://raw.githubusercontent.com/dosordie/ioBroker.gira-endpoint/main/admin/gira-endpoint.svg",
     "authors": ["you"],
     "keywords": ["gira", "websocket", "smarthome"],
-    "license": "MIT",
+    "license": "GPL-3.0",
     "enabled": true,
     "materialize": false,
     "adminUI": { "config": "json" },

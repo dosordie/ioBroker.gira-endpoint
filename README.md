@@ -65,4 +65,4 @@ Die Payload-Struktur deines Gira-Endpoints in `src/lib/GiraClient.ts` (Parsing) 
 * Initial version (WS client, reconnect, basic event mapping)
 
 ## License
-MIT License
+GNU General Public License v3.0

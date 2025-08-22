@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "ioBroker adapter for Gira endpoint (WS/WSS) – emits events as states, minimal viable replacement for Node-RED Gira node",
   "author": "you",
-  "license": "MIT",
+  "license": "GPL-3.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/dosordie/ioBroker.gira-endpoint"
