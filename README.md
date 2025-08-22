@@ -1,24 +1,32 @@
 # ioBroker Gira-Endpoint Adapter
+## Gira Endpoint Adapter
 
-Der Gira-Endpoint-Adapter ermöglicht die Anbindung eines Gira Homeservers an ioBroker über WebSocket (WS/WSS).
-Er verbindet sich direkt mit dem Homeserver und erlaubt so den Austausch von Datenpunkten in Echtzeit.
+Der **Gira-Endpoint-Adapter** verbindet ioBroker über **WebSocket (WS/WSS)** mit einem **Gira Homeserver**.  
+Damit können Datenpunkte in Echtzeit zwischen dem Homeserver und ioBroker ausgetauscht werden.  
 
-Damit können Werte wie Schaltzustände, Sensoren oder Szenen aus dem Gira-System nahtlos in ioBroker integriert und weiterverarbeitet werden.
+So lassen sich Schaltzustände, Sensorwerte oder Szenen aus dem Gira-System nahtlos in ioBroker integrieren und dort weiterverarbeiten.
 
-Funktionen
+### Features
+- Verbindung über WebSocket (WS/WSS)  
+- Senden und Empfangen von Datenpunkten  
+- Echtzeitkommunikation für schnelle Automatisierungen  
+- Einfache Integration in bestehende Smart-Home-Szenarien  
 
-Verbindung per WebSocket oder WebSocket Secure (WSS)
+### Usage
+Eingabewerte können sein:  true | false | toggle | String | Number
 
-Empfang und Senden von Datenpunkten zwischen Gira Homeserver und ioBroker
+- `true` / `false` → werden zu `1` / `0` im HomeServer umgewandelt  
+- `toggle` → schaltet den aktuellen Wert im HomeServer um  
+- `String` und `Number` → werden direkt durchgereicht  
 
-Echtzeitkommunikation für schnelle Reaktionen und Automatisierungen
+### Grundlage
+Der Adapter wurde nachgebaut auf Basis von:  
+👉 [node-red-contrib-gira-endpoint](https://github.com/luckyy0815/node-red-contrib-gira-endpoint)
 
-Einfache Integration in bestehende Smart-Home-Szenarien
+---
 
-Grundlage
-
-Der Adapter wurde inspiriert und umgesetzt auf Basis von
-👉 node-red-contrib-gira-endpoint
+## Lizenz
+[GPLv3](LICENSE)
 
 ## Installation (lokal)
 
