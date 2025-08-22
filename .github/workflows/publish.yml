@@ -1,0 +1,53 @@
+name: Publish ioBroker.gira-endpoint
+
+on:
+  release:
+    types: [published]         # Publish bei GitHub-Release
+  push:
+    tags:
+      - 'v*.*.*'               # ODER bei Version-Tags wie v0.1.0
+
+permissions:
+  contents: read               # nötig für checkout
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20 + npm registry
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          always-auth: true
+
+      # Optional: ioBroker Adapter Checker (nicht-blockierend; mache "continue-on-error: true" wenn du es weich haben willst)
+      - name: Adapter Checker
+        continue-on-error: true
+        run: npx @iobroker/adapter-checker
+
+      - name: Install deps (clean)
+        run: npm ci
+
+      # Version aus Tag übernehmen (wenn Trigger via vX.Y.Z Tag)
+      - name: Sync version from tag to package.json & io-package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          node -e "let pj=require('./package.json'); pj.version='${TAG}'; require('fs').writeFileSync('package.json', JSON.stringify(pj,null,2));"
+          test -f io-package.json && node -e "let f='io-package.json',o=require('./'+f); o.common=o.common||{}; o.common.version='${TAG}'; require('fs').writeFileSync(f, JSON.stringify(o,null,2));"
+
+      - name: Build (if present)
+        run: npm run build --if-present
+
+      - name: Sanity check (npm pack)
+        run: npm pack
+
+      - name: Publish to npm (public + provenance)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
