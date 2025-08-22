@@ -31,8 +31,8 @@
     "type": "protocols",
     "connectionType": "cloud",
     "dataSource": "push",
-    "encryptedNative": ["password"],
-    "protectedNative": ["password"],
+    "encryptedNative": ["password", "ca", "cert", "key"],
+    "protectedNative": ["password", "ca", "cert", "key"],
     "dependencies": [{"js-controller": ">=5.0.19"}]
   },
   "native": {
