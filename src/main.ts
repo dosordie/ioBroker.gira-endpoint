@@ -43,6 +43,13 @@ class GiraEndpointAdapter extends utils.Adapter {
   private pendingUpdates = new Map<string, any>();
   private skipInitialUpdate = new Set<string>();
 
+  private notifyAdmin(message: string): void {
+    this.sendTo("admin", "messageBox", {
+      title: "gira-endpoint",
+      message,
+    });
+  }
+
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
       ...options,
@@ -212,16 +219,22 @@ class GiraEndpointAdapter extends utils.Adapter {
           : fullId;
         if (id.startsWith("CO@.")) {
           if (!validIds.has(id)) {
-            this.log.warn(`Deleting stale endpoint state ${id}`);
+            const msg = `Deleting stale endpoint state ${id}`;
+            this.log.info(msg);
+            this.notifyAdmin(msg);
             await this.delObjectAsync(id, { recursive: true });
           }
         } else if (id.startsWith("objekte.")) {
-          this.log.warn(`Deleting legacy object ${id}`);
+          const msg = `Deleting legacy object ${id}`;
+          this.log.info(msg);
+          this.notifyAdmin(msg);
           await this.delObjectAsync(id, { recursive: true });
         }
       }
       try {
-        this.log.warn('Deleting legacy object root "objekte"');
+        const msg = 'Deleting legacy object root "objekte"';
+        this.log.info(msg);
+        this.notifyAdmin(msg);
         await this.delObjectAsync("objekte", { recursive: true });
       } catch {
         /* ignore */
