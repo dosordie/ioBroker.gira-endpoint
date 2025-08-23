@@ -9,37 +9,37 @@ Damit können Datenpunkte in Echtzeit zwischen dem Homeserver und ioBroker ausge
 So lassen sich Schaltzustände, Sensorwerte oder Szenen aus dem Gira-System nahtlos in ioBroker integrieren und dort weiterverarbeiten.
 
 ### Features
-- Verbindung über WebSocket (WS/WSS)
-- Senden und Empfangen von Datenpunkten
+- Verbindung über WebSocket (WS/WSS) (performant, spart unnötigen Overhead)
+- Senden und Empfangen von verscheidenen Datenpunkten
 - Echtzeitkommunikation für schnelle Automatisierungen
 - Einfache Integration in bestehende Smart-Home-Szenarien
 - Konfigurierbare Mappings zwischen beliebigen ioBroker States und Gira-Endpunkten, wahlweise in beide Richtungen
-- Optionale 0/1 ↔ true/false-Umwandlung pro Mapping
+- Optionale 0/1 ↔ true/false-Umwandlung pro Mapping -> so eird aus einem 0/1 vom HS ein False / True für andere Zwecke
 
 ### Usage
 Eingabewerte können sein:  true | false | toggle | String | Number
 
-- `true` / `false` → werden zu `1` / `0` im HomeServer umgewandelt  
+- `true` / `false` → werden zu `1` / `0` im HomeServer umgewandelt  (wenn checkox aktiv)
 - `toggle` → schaltet den aktuellen Wert im HomeServer um  
-- `String` und `Number` → werden direkt durchgereicht  
+- `String` und `Number` → werden direkt durchgereicht
+-  Bei den Mapping Endpunkten kann ein ioBroker Objekt (z.B. 0_userdata.0.mappingtest) eines anderen Adapters angegeben werden, das dann zum HS in das angegebene KO (CO@) durchgereicht wird.
+   Hier kann die Richtung per Checkbos ausgewählt werden falls eine Richtung nicht bedient werden soll.
 
-+## Homeserver konfigurieren
-+
+## Homeserver konfigurieren
+
 +1. **WebSocket in den Projekteinstellungen aktivieren**
 +   In den *Projekteinstellungen* unter "KO-Gateway" den WebSocket aktivieren und dem WebSocket-Benutzer Zugriff erlauben.
 +   ![HS-Projekteinstellungen](docs/hs-projekteinstellungen.png)
-+
+
 +2. **WebSocket-Benutzer anlegen**  
 +   Einen Benutzer z. B. `websocket` erstellen und ihm Lese- und Schreibrechte für die entsprechende Benutzergruppe zuweisen.  
 +   ![HS-User](docs/hs-user.png)
-+
+
 +3. **Kommunikationsobjekte freigeben**  
 +   Bei jedem benötigten Kommunikationsobjekt die WebSocket-Gruppe sowohl für Lesen als auch Schreiben eintragen.  
 +   ![HS-KO-Einstellungen](docs/hs-koeinstellungen.png)
-+
 
-## Lizenz
-[GPLv3](LICENSE)
+
 
 ## Installation von (Github) *Solange noch Beta*
 
@@ -66,6 +66,22 @@ iobroker upload gira-endpoint
 #iobroker add gira-endpoint
 
 ```
+🇩🇪 Unterstützung
+
+Dieser Adapter wird in meiner Freizeit entwickelt und gepflegt.
+Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spende als Anerkennung meiner Arbeit:
+
+👉 Unterstützen per PayPal
+
+🇬🇧 Support
+
+This adapter is developed and maintained in my free time.
+If you like it or find it useful, I would really appreciate a small donation as a token of support:
+
+👉 Support via PayPal
+
+## Lizenz
+[GPLv3](LICENSE)
 
 ## Changelog
 
