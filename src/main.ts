@@ -304,6 +304,11 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.client.on("close", (info: any) => {
         this.log.warn(`Connection closed (${info?.code || "?"}) ${info?.reason || ""}`);
         this.setState("info.connection", false, true);
+        this.getStatesAsync("info.subscriptions.*").then((states) => {
+          for (const id of Object.keys(states)) {
+            this.setState(id, { val: false, ack: true });
+          }
+        }).catch(() => {/* ignore */});
       });
 
       this.client.on("error", (err: any) => {
@@ -602,6 +607,10 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.client.subscribe(keys);
       } else {
         this.client.unsubscribe(keys);
+        for (const k of keys) {
+          const subId = `info.subscriptions.${this.sanitizeId(k)}`;
+          this.setState(subId, { val: false, ack: true });
+        }
       }
       this.setState(id, { val: state.val, ack: true });
       return;
