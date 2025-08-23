@@ -23,16 +23,25 @@ Eingabewerte können sein:  true | false | toggle | String | Number
 - `toggle` → schaltet den aktuellen Wert im HomeServer um  
 - `String` und `Number` → werden direkt durchgereicht  
 
-### Grundlage
-Der Adapter wurde nachgebaut auf Basis von:  
-👉 [node-red-contrib-gira-endpoint](https://github.com/luckyy0815/node-red-contrib-gira-endpoint)
-
----
++## Homeserver konfigurieren
++
++1. **WebSocket in den Projekteinstellungen aktivieren**
++   In den *Projekteinstellungen* unter "KO-Gateway" den WebSocket aktivieren und dem WebSocket-Benutzer Zugriff erlauben.
++   ![HS-Projekteinstellungen](docs/hs-projekteinstellungen.png)
++
++2. **WebSocket-Benutzer anlegen**  
++   Einen Benutzer z. B. `websocket` erstellen und ihm Lese- und Schreibrechte für die entsprechende Benutzergruppe zuweisen.  
++   ![HS-User](docs/hs-user.png)
++
++3. **Kommunikationsobjekte freigeben**  
++   Bei jedem benötigten Kommunikationsobjekt die WebSocket-Gruppe sowohl für Lesen als auch Schreiben eintragen.  
++   ![HS-KO-Einstellungen](docs/hs-koeinstellungen.png)
++
 
 ## Lizenz
 [GPLv3](LICENSE)
 
-## Installation (Github) *Empfohlen*
+## Installation von (Github) *Solange noch Beta*
 
 Bis der Adapter Offiziell ist:
 Im ioBroker unter Adapter auf den Expertenmodus schalten, Github anklicken und https://github.com/dosordie/ioBroker.gira-endpoint/ bei Benutzerdefiniert eintragen
@@ -40,7 +49,7 @@ Im ioBroker unter Adapter auf den Expertenmodus schalten, Github anklicken und h
 ## Installation (lokal) *Für test ect.*
 
 ```bash
-Variante A (empfohlen): per Tarball installieren 
+Per Tarball installieren 
 # im Projektordner
 cd ~/iobroker.gira-endpoint
 git pull --ff-only
@@ -58,12 +67,6 @@ iobroker upload gira-endpoint
 
 ```
 
-Danach Instanz in Admin öffnen und Verbindung einstellen (Host/Port/Path/TLS/Benutzer).
-
-## Tests
-
-Die Tests können mit `npm test` ausgeführt werden.
-
 ## Changelog
 
 ### 0.2.0
@@ -72,8 +75,11 @@ Die Tests können mit `npm test` ausgeführt werden.
 ### 0.1.0
 * Adapter basically working and tested
 
-### 0.0.1
-* Initial version (WS client, reconnect, basic event mapping)
-
 ## License
 GNU General Public License v3.0
+
+### Grundlage
+Der Adapter wurde nachgebaut auf Basis von:  
+👉 [node-red-contrib-gira-endpoint](https://github.com/luckyy0815/node-red-contrib-gira-endpoint)
+
+---
