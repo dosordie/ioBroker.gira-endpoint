@@ -161,6 +161,10 @@
               "attr": "updateOnStart",
               "label": "Beim Start aktualisieren",
               "default": true
+            },
+            {
+              "type": "delete",
+              "confirm": "confirmDeleteRow"
             }
           ]
         }
@@ -225,6 +229,10 @@
               "attr": "updateOnStart",
               "label": "Beim Start aktualisieren",
               "default": true
+            },
+            {
+              "type": "delete",
+              "confirm": "confirmDeleteRow"
             }
           ]
         }
