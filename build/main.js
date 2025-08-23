@@ -216,6 +216,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     await this.delObjectAsync(id);
                 }
             }
+            
             try {
                 await this.delObjectAsync("objekte", { recursive: true });
             }
