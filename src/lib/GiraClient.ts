@@ -206,7 +206,7 @@ export class GiraClient extends EventEmitter {
   }
 
   public select(filter: object, context?: string): Promise<any> | void {
-    const msg: any = { type: "select", param: { filter } };
+    const msg: any = { type: "select", param: filter };
     if (context) {
       msg.context = context;
       return new Promise((resolve, reject) => {

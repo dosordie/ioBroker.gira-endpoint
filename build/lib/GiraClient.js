@@ -24,7 +24,7 @@ class GiraClient extends events_1.EventEmitter {
             path: "/",
             username: "",
             password: "",
-            authHeader: true,
+            authHeader: false,
             pingIntervalMs: 30000,
             reconnect: { minMs: 1000, maxMs: 30000 },
             tls: {},
@@ -150,7 +150,7 @@ class GiraClient extends events_1.EventEmitter {
         this.send(msg);
     }
     select(filter, context) {
-        const msg = { type: "select", param: { filter } };
+        const msg = { type: "select", param: filter };
         if (context) {
             msg.context = context;
             return new Promise((resolve, reject) => {
