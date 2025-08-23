@@ -134,9 +134,6 @@
           "style": {
             "fontSize": "0.8rem"
           },
-          "delete": {
-            "confirm": "confirmDeleteRow"
-          },
           "xs": 12,
           "sm": 12,
           "md": 12,
@@ -187,9 +184,6 @@
           "label": "Hier die Endpunkt IDs und ioBroker Objekte eintragen",
           "style": {
             "fontSize": "0.8rem"
-          },
-          "delete": {
-            "confirm": "confirmDeleteRow"
           },
           "xs": 12,
           "sm": 12,
