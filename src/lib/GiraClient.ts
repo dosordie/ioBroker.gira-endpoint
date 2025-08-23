@@ -19,6 +19,10 @@ export interface GiraClientOptions {
   path: string;
   username?: string;
   password?: string;
+  /**
+   * Sends the auth token as HTTP header instead of query parameter when true.
+   */
+  authHeader?: boolean;
   pingIntervalMs?: number;
   reconnect?: Partial<ReconnectOptions>;
   tls?: {
@@ -33,6 +37,7 @@ type ResolvedGiraClientOptions = Omit<GiraClientOptions, "reconnect"> & {
   reconnect: ReconnectOptions;
   username: string;
   password: string;
+  authHeader: boolean;
   pingIntervalMs: number;
   tls: NonNullable<GiraClientOptions["tls"]>;
 };
@@ -56,6 +61,7 @@ export class GiraClient extends EventEmitter {
       path: "/",
       username: "",
       password: "",
+      authHeader: false,
       pingIntervalMs: 30000,
       reconnect: { minMs: 1000, maxMs: 30000 },
       tls: {},
@@ -77,10 +83,16 @@ export class GiraClient extends EventEmitter {
     const scheme = this.opts.ssl ? "wss" : "ws";
 
     const headers: Record<string, string> = {};
-    const token = Buffer.from(`${this.opts.username ?? ""}:${this.opts.password ?? ""}`).toString("base64");
+    const token = Buffer.from(
+      `${this.opts.username ?? ""}:${this.opts.password ?? ""}`
+    ).toString("base64");
+    const encodedToken = encodeURIComponent(token);
     const path = this.opts.path.startsWith("/") ? this.opts.path : `/${this.opts.path}`;
-    const query = this.opts.username ? `?authorization=${token}` : "";
+    const query = this.opts.username && !this.opts.authHeader ? `?authorization=${encodedToken}` : "";
     const url = `${scheme}://${this.opts.host}:${this.opts.port}${path}${query}`;
+    if (this.opts.username && this.opts.authHeader) {
+      headers.Authorization = `Basic ${token}`;
+    }
 
     const wsOpts: any = { headers, ...this.opts.tls };
     const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;

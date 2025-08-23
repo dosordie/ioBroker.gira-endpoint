@@ -108,6 +108,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             const path = "/endpoints/ws";
             const username = String(cfg.username ?? "");
             const password = String(cfg.password ?? "");
+            const authHeader = Boolean(cfg.authHeader);
             const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
             const boolKeys = new Set();
             const skipInitial = new Set();
@@ -274,6 +275,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 path,
                 username,
                 password,
+                authHeader,
                 pingIntervalMs,
                 reconnect: {
                     minMs: cfg.reconnect?.minMs ?? 1000,
@@ -304,8 +306,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }).catch(() => { });
             });
             this.client.on("error", (err) => {
-                this.log.error(`Client error: ${err?.message || err}`);
+                const msg = `Client error: ${err?.message || err}`;
+                this.log.error(msg);
                 this.setState("info.lastError", String(err?.message || err), true);
+                this.notifyAdmin(msg);
             });
             this.client.on("event", async (payload) => {
                 // Provide full event information for debugging
