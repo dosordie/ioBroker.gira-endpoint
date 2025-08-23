@@ -474,24 +474,6 @@ class GiraEndpointAdapter extends utils.Adapter {
                     }
                 }
             });
-            await this.setObjectNotExistsAsync("control", {
-                type: "channel",
-                common: { name: "Control" },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync("control.subscribe", {
-                type: "state",
-                common: { name: "Subscribe keys", type: "string", role: "state", read: false, write: true },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync("control.unsubscribe", {
-                type: "state",
-                common: { name: "Unsubscribe keys", type: "string", role: "state", read: false, write: true },
-                native: {},
-            });
-            this.log.debug("Created control states");
-            this.subscribeStates("control.subscribe");
-            this.subscribeStates("control.unsubscribe");
             this.client.connect();
         }
         catch (e) {
@@ -593,29 +575,6 @@ class GiraEndpointAdapter extends utils.Adapter {
         const key = id.split(".").pop();
         if (!key)
             return;
-        if (key === "subscribe" || key === "unsubscribe") {
-            const keys = String(state.val || "")
-                .split(/[,;\s]+/)
-                .map((k) => k.trim())
-                .filter((k) => k)
-                .map((k) => this.normalizeKey(k));
-            if (!keys.length)
-                return;
-            if (key === "subscribe") {
-                for (const k of keys)
-                    this.pendingSubscriptions.add(k);
-                this.client.subscribe(keys);
-            }
-            else {
-                this.client.unsubscribe(keys);
-                for (const k of keys) {
-                    const subId = `info.subscriptions.${this.sanitizeId(k)}`;
-                    this.setState(subId, { val: false, ack: true });
-                }
-            }
-            this.setState(id, { val: state.val, ack: true });
-            return;
-        }
         let uidValue = state.val;
         let method = "set";
         let ackVal = state.val;
