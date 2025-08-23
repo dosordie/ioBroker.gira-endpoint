@@ -115,6 +115,19 @@ export class GiraClient extends EventEmitter {
         try { payload = JSON.parse(text); } catch {
           payload = { raw: text };
         }
+        if (
+          payload &&
+          typeof payload === "object" &&
+          payload.code !== undefined &&
+          payload.code !== 0
+        ) {
+          const msg =
+            (payload as any).message ||
+            (payload as any).error ||
+            `Error code ${payload.code}`;
+          this.emit("error", new Error(msg));
+          return;
+        }
         this.normalizeData(payload?.data);
         this.emit("event", payload);
       } catch (err) {
