@@ -49,6 +49,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.boolKeys = new Set();
         this.suppressStateChange = new Set();
         this.pendingUpdates = new Map();
+        this.skipInitialUpdate = new Set();
         this.on("ready", this.onReady.bind(this));
         this.on("unload", this.onUnload.bind(this));
         this.on("stateChange", this.onStateChange.bind(this));
@@ -97,6 +98,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             const password = String(cfg.password ?? "");
             const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
             const boolKeys = new Set();
+            const skipInitial = new Set();
             const rawKeys = cfg.endpointKeys;
             const endpointKeys = [];
             if (Array.isArray(rawKeys)) {
@@ -111,6 +113,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const bool = Boolean(k.bool);
                         if (bool)
                             boolKeys.add(key);
+                        const updateOnStart = k.updateOnStart !== false;
+                        if (!updateOnStart)
+                            skipInitial.add(key);
                         endpointKeys.push(key);
                     }
                     else {
@@ -145,6 +150,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const toEndpoint = m.toEndpoint !== false;
                     const toState = Boolean(m.toState);
                     const bool = Boolean(m.bool);
+                    const updateOnStart = m.updateOnStart !== false;
+                    if (!updateOnStart)
+                        skipInitial.add(key);
                     if (toEndpoint) {
                         forwardMap.set(stateId, { key, bool });
                         if (bool)
@@ -162,6 +170,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.forwardMap = forwardMap;
             this.reverseMap = reverseMap;
             this.boolKeys = boolKeys;
+            this.skipInitialUpdate = skipInitial;
             for (const key of endpointKeys) {
                 if (!this.keyDescMap.has(key))
                     this.keyDescMap.set(key, key);
@@ -289,6 +298,11 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }
                 for (const { key, value: val } of entries) {
                     const normalized = this.normalizeKey(key);
+                    if (this.skipInitialUpdate.has(normalized)) {
+                        this.log.debug(`Skipping initial update for ${normalized}`);
+                        this.skipInitialUpdate.delete(normalized);
+                        continue;
+                    }
                     const boolKey = this.boolKeys.has(normalized);
                     let value = val;
                     let type = "mixed";

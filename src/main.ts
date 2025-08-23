@@ -16,7 +16,10 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   cert?: string;
   key?: string;
   rejectUnauthorized?: boolean;
-  endpointKeys?: string[] | { key: string; name?: string; bool?: boolean }[] | string;
+  endpointKeys?:
+    | string[]
+    | { key: string; name?: string; bool?: boolean; updateOnStart?: boolean }[]
+    | string;
   updateLastEvent?: boolean;
   mappings?: {
     stateId: string;
@@ -25,6 +28,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     toEndpoint?: boolean;
     toState?: boolean;
     bool?: boolean;
+    updateOnStart?: boolean;
   }[];
 }
 
@@ -38,6 +42,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private boolKeys = new Set<string>();
   private suppressStateChange = new Set<string>();
   private pendingUpdates = new Map<string, any>();
+  private skipInitialUpdate = new Set<string>();
 
   public constructor(options: Partial<utils.AdapterOptions> = {}) {
     super({
@@ -96,6 +101,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
 
       const boolKeys = new Set<string>();
+      const skipInitial = new Set<string>();
 
       const rawKeys = cfg.endpointKeys;
       const endpointKeys: string[] = [];
@@ -108,6 +114,8 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (name) this.keyDescMap.set(key, name);
             const bool = Boolean((k as any).bool);
             if (bool) boolKeys.add(key);
+            const updateOnStart = (k as any).updateOnStart !== false;
+            if (!updateOnStart) skipInitial.add(key);
             endpointKeys.push(key);
           } else {
             const key = this.normalizeKey(String(k).trim());
@@ -137,6 +145,8 @@ class GiraEndpointAdapter extends utils.Adapter {
           const toEndpoint = (m as any).toEndpoint !== false;
           const toState = Boolean((m as any).toState);
           const bool = Boolean((m as any).bool);
+          const updateOnStart = (m as any).updateOnStart !== false;
+          if (!updateOnStart) skipInitial.add(key);
           if (toEndpoint) {
             forwardMap.set(stateId, { key, bool });
             if (bool) boolKeys.add(key);
@@ -151,6 +161,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.forwardMap = forwardMap;
       this.reverseMap = reverseMap;
       this.boolKeys = boolKeys;
+      this.skipInitialUpdate = skipInitial;
 
       for (const key of endpointKeys) {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
@@ -291,6 +302,11 @@ class GiraEndpointAdapter extends utils.Adapter {
 
         for (const { key, value: val } of entries) {
           const normalized = this.normalizeKey(key);
+          if (this.skipInitialUpdate.has(normalized)) {
+            this.log.debug(`Skipping initial update for ${normalized}`);
+            this.skipInitialUpdate.delete(normalized);
+            continue;
+          }
           const boolKey = this.boolKeys.has(normalized);
           let value: any = val;
           let type: ioBroker.StateCommon["type"] = "mixed";

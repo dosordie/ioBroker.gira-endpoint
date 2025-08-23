@@ -23,6 +23,7 @@
   "CO@": "CO@",
   "Beschreibung": "Beschreibung",
   "0/1 ↔ true/false": "0/1 ↔ true/false",
+  "Beim Start aktualisieren": "Beim Start aktualisieren",
   "Mapping Endpunkte": "Mapping Endpunkte",
   "Liste der Homeserver Endpunkt IDs die abonniert werden und zusätzlich in einen anderes ioBroker Objekt geschrieben / von dort gelesen werden": "Liste der Homeserver Endpunkt IDs die abonniert werden und zusätzlich in einen anderes ioBroker Objekt geschrieben / von dort gelesen werden",
   "Hier die Endpunkt IDs und ioBroker Objekte eintragen": "Hier die Endpunkt IDs und ioBroker Objekte eintragen",
