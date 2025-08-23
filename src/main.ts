@@ -42,6 +42,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private suppressStateChange = new Set<string>();
   private pendingUpdates = new Map<string, any>();
   private skipInitialUpdate = new Set<string>();
+  private pendingSubscriptions = new Set<string>();
 
   private notifyAdmin(message: string): void {
     this.sendTo("admin", "messageBox", {
@@ -83,13 +84,18 @@ class GiraEndpointAdapter extends utils.Adapter {
         common: { name: "Last error", type: "string", role: "text", read: true, write: false },
         native: {},
       });
-        await this.setObjectNotExistsAsync("info.lastEvent", {
-          type: "state",
-          common: { name: "Last event", type: "string", role: "json", read: true, write: false },
-          native: {},
-        });
-        await this.setStateAsync("info.connection", { val: false, ack: true });
-        this.log.debug("Pre-created info states");
+      await this.setObjectNotExistsAsync("info.lastEvent", {
+        type: "state",
+        common: { name: "Last event", type: "string", role: "json", read: true, write: false },
+        native: {},
+      });
+      await this.setObjectNotExistsAsync("info.subscriptions", {
+        type: "channel",
+        common: { name: "Subscriptions" },
+        native: {},
+      });
+      await this.setStateAsync("info.connection", { val: false, ack: true });
+      this.log.debug("Pre-created info states");
 
       await this.setObjectNotExistsAsync("CO@", {
         type: "channel",
@@ -266,9 +272,13 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);
         this.setState("info.connection", true, true);
         if (this.endpointKeys.length) {
+          this.pendingSubscriptions = new Set(
+            this.endpointKeys.map((k) => this.normalizeKey(k))
+          );
           this.client!.subscribe(this.endpointKeys);
         } else {
           this.log.info("Subscribing to all endpoint events (no keys configured)");
+          this.pendingSubscriptions.clear();
           this.client!.subscribe([]);
         }
       });
@@ -299,15 +309,63 @@ class GiraEndpointAdapter extends utils.Adapter {
         const entries: Array<{ key: string; value: any }> = [];
 
         // Case 1: subscription result lists multiple items
-        if (typeof data === "object" && Array.isArray((data as any).items)) {
+        if (
+          this.pendingSubscriptions.size &&
+          typeof data === "object" &&
+          Array.isArray((data as any).items)
+        ) {
+          const received = new Set<string>();
           for (const item of (data as any).items) {
             if (!item) continue;
             const key =
               item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
             if (key === undefined) continue;
+            const normalized = this.normalizeKey(key);
+            received.add(normalized);
+            const success = !("error" in item);
+            const subId = `info.subscriptions.${this.sanitizeId(normalized)}`;
+            await this.extendObjectAsync(subId, {
+              type: "state",
+              common: {
+                name: normalized,
+                type: "boolean",
+                role: "indicator",
+                read: true,
+                write: false,
+              },
+              native: {},
+            });
+            await this.setStateAsync(subId, { val: success, ack: true });
+            if (!success) {
+              const msg = `Subscription failed for ${normalized}`;
+              this.log.warn(msg);
+              this.notifyAdmin(msg);
+            }
             const value = item.data?.value !== undefined ? item.data.value : item.data ?? item.value;
             entries.push({ key, value });
           }
+          const pending = Array.from(this.pendingSubscriptions);
+          for (const key of pending) {
+            if (!received.has(key)) {
+              const subId = `info.subscriptions.${this.sanitizeId(key)}`;
+              await this.extendObjectAsync(subId, {
+                type: "state",
+                common: {
+                  name: key,
+                  type: "boolean",
+                  role: "indicator",
+                  read: true,
+                  write: false,
+                },
+                native: {},
+              });
+              await this.setStateAsync(subId, { val: false, ack: true });
+              const msg = `No subscription response for ${key}`;
+              this.log.warn(msg);
+              this.notifyAdmin(msg);
+            }
+          }
+          for (const key of pending) this.pendingSubscriptions.delete(key);
           // Case 2: push event with subscription key
         } else if (payload?.subscription?.key && typeof data === "object" && "value" in data) {
           entries.push({ key: String(payload.subscription.key), value: (data as any).value });
@@ -526,6 +584,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         .map((k) => this.normalizeKey(k));
       if (!keys.length) return;
       if (key === "subscribe") {
+        for (const k of keys) this.pendingSubscriptions.add(k);
         this.client.subscribe(keys);
       } else {
         this.client.unsubscribe(keys);
