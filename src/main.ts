@@ -9,6 +9,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   ssl?: boolean;
   username?: string;
   password?: string;
+  authHeader?: boolean;
   pingIntervalMs?: number;
   reconnect?: { minMs?: number; maxMs?: number };
   ca?: string;
@@ -104,12 +105,13 @@ class GiraEndpointAdapter extends utils.Adapter {
       });
 
         const cfg = this.config as unknown as AdapterConfig;
-        const host = String(cfg.host ?? "").trim();
-        const port = Number(cfg.port ?? 80);
-        const ssl = Boolean(cfg.ssl ?? false);
-        const path = "/endpoints/ws";
+      const host = String(cfg.host ?? "").trim();
+      const port = Number(cfg.port ?? 80);
+      const ssl = Boolean(cfg.ssl ?? false);
+      const path = "/endpoints/ws";
       const username = String(cfg.username ?? "");
       const password = String(cfg.password ?? "");
+      const authHeader = Boolean(cfg.authHeader);
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
 
       const boolKeys = new Set<string>();
@@ -278,6 +280,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         path,
         username,
         password,
+        authHeader,
         pingIntervalMs,
         reconnect: {
           minMs: cfg.reconnect?.minMs ?? 1000,

@@ -23,6 +23,7 @@ class GiraClient extends events_1.EventEmitter {
             path: "/",
             username: "",
             password: "",
+            authHeader: false,
             pingIntervalMs: 30000,
             reconnect: { minMs: 1000, maxMs: 30000 },
             tls: {},
@@ -43,9 +44,13 @@ class GiraClient extends events_1.EventEmitter {
         const scheme = this.opts.ssl ? "wss" : "ws";
         const headers = {};
         const token = Buffer.from(`${this.opts.username ?? ""}:${this.opts.password ?? ""}`).toString("base64");
+        const encodedToken = encodeURIComponent(token);
         const path = this.opts.path.startsWith("/") ? this.opts.path : `/${this.opts.path}`;
-        const query = this.opts.username ? `?authorization=${token}` : "";
+        const query = this.opts.username && !this.opts.authHeader ? `?authorization=${encodedToken}` : "";
         const url = `${scheme}://${this.opts.host}:${this.opts.port}${path}${query}`;
+        if (this.opts.username && this.opts.authHeader) {
+            headers.Authorization = `Basic ${token}`;
+        }
         const wsOpts = { headers, ...this.opts.tls };
         const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
         if (proxy) {
@@ -78,6 +83,16 @@ class GiraClient extends events_1.EventEmitter {
                 }
                 catch {
                     payload = { raw: text };
+                }
+                if (payload &&
+                    typeof payload === "object" &&
+                    payload.code !== undefined &&
+                    payload.code !== 0) {
+                    const msg = payload.message ||
+                        payload.error ||
+                        `Error code ${payload.code}`;
+                    this.emit("error", new Error(msg));
+                    return;
                 }
                 this.normalizeData(payload?.data);
                 this.emit("event", payload);
