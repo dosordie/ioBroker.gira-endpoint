@@ -163,6 +163,12 @@
               "attr": "bool",
               "label": "0/1 ↔ true/false",
               "default": false
+            },
+            {
+              "type": "checkbox",
+              "attr": "updateOnStart",
+              "label": "Beim Start aktualisieren",
+              "default": true
             }
           ]
         }
@@ -218,6 +224,12 @@
               "attr": "bool",
               "label": "0/1 ↔ true/false",
               "default": false
+            },
+            {
+              "type": "checkbox",
+              "attr": "updateOnStart",
+              "label": "Beim Start aktualisieren",
+              "default": true
             }
           ]
         }
