@@ -35,6 +35,10 @@ class GiraClient extends events_1.EventEmitter {
     }
     connect() {
         this.closedByUser = false;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = undefined;
+        }
         const scheme = this.opts.ssl ? "wss" : "ws";
         const headers = {};
         const token = Buffer.from(`${this.opts.username ?? ""}:${this.opts.password ?? ""}`).toString("base64");
@@ -103,6 +107,10 @@ class GiraClient extends events_1.EventEmitter {
     close() {
         this.closedByUser = true;
         this.stopPing();
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = undefined;
+        }
         if (this.ws && this.ws.readyState === ws_1.default.OPEN)
             this.ws.close();
     }
@@ -162,7 +170,12 @@ class GiraClient extends events_1.EventEmitter {
         const { maxMs } = this.opts.reconnect;
         const jitterDelta = this.backoffMs * BACKOFF_JITTER * (Math.random() * 2 - 1);
         const delay = Math.min(maxMs, Math.max(0, this.backoffMs + jitterDelta));
-        setTimeout(() => {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = undefined;
+        }
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = undefined;
             if (!this.closedByUser)
                 this.connect();
         }, delay);
