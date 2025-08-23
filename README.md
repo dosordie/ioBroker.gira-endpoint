@@ -27,15 +27,15 @@ Eingabewerte können sein:  true | false | toggle | String | Number
 
 ## Homeserver konfigurieren
 
-+1. **WebSocket in den Projekteinstellungen aktivieren**
+1. **WebSocket in den Projekteinstellungen aktivieren**
 +   In den *Projekteinstellungen* unter "KO-Gateway" den WebSocket aktivieren und dem WebSocket-Benutzer Zugriff erlauben.
 +   ![HS-Projekteinstellungen](docs/hs-projekteinstellungen.png)
 
-+2. **WebSocket-Benutzer anlegen**  
+2. **WebSocket-Benutzer anlegen**  
 +   Einen Benutzer z. B. `websocket` erstellen und ihm Lese- und Schreibrechte für die entsprechende Benutzergruppe zuweisen.  
 +   ![HS-User](docs/hs-user.png)
 
-+3. **Kommunikationsobjekte freigeben**  
+3. **Kommunikationsobjekte freigeben**  
 +   Bei jedem benötigten Kommunikationsobjekt die WebSocket-Gruppe sowohl für Lesen als auch Schreiben eintragen.  
 +   ![HS-KO-Einstellungen](docs/hs-koeinstellungen.png)
 
@@ -66,19 +66,11 @@ iobroker upload gira-endpoint
 #iobroker add gira-endpoint
 
 ```
-🇩🇪 Unterstützung
+### 💙 Unterstützung
+Ich bastle an diesem Adapter in meiner Freizeit.  
+Wenn er dir gefällt oder dir weiterhilft, freue ich mich mega über eine kleine Spende:
 
-Dieser Adapter wird in meiner Freizeit entwickelt und gepflegt.
-Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spende als Anerkennung meiner Arbeit:
-
-👉 Unterstützen per PayPal
-
-🇬🇧 Support
-
-This adapter is developed and maintained in my free time.
-If you like it or find it useful, I would really appreciate a small donation as a token of support:
-
-👉 Support via PayPal
+[![Spenden via PayPal](https://img.shields.io/badge/Spenden-PayPal-blue.svg?logo=paypal)](https://www.paypal.com/paypalme/AuhuberD)
 
 ## Lizenz
 [GPLv3](LICENSE)
