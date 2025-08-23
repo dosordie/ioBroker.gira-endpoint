@@ -139,6 +139,7 @@
           "md": 12,
           "lg": 12,
           "xl": 12,
+          "confirmRowDelete": true,
           "items": [
             {
               "type": "text",
@@ -186,6 +187,7 @@
           "md": 12,
           "lg": 12,
           "xl": 12,
+          "confirmRowDelete": true,
           "items": [
             {
               "type": "text",
