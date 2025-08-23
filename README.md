@@ -89,7 +89,7 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 ## License
 GNU General Public License v3.0
 
-### Grundlage
+## Grundlage
 Der Adapter wurde nachgebaut auf Basis von:  
 👉 [node-red-contrib-gira-endpoint](https://github.com/luckyy0815/node-red-contrib-gira-endpoint)
 
