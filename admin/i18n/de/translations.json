@@ -26,5 +26,7 @@
   "Hier die Endpunkt IDs und ioBroker Objekte eintragen": "Hier die Endpunkt IDs und ioBroker Objekte eintragen",
   "State ID": "State ID",
   "ioBroker → Endpunkt": "ioBroker → Endpunkt",
-  "Endpunkt → ioBroker": "Endpunkt → ioBroker"
+  "Endpunkt → ioBroker": "Endpunkt → ioBroker",
+  "Abonnements": "Abonnements",
+  "Abonnementstatus": "Abonnementstatus"
 }
