@@ -237,7 +237,7 @@
         "subscriptionsTable": {
           "type": "pattern",
           "label": "Abonnementstatus",
-          "pattern": "%INSTANCE%.info.subscriptions.*"
+          "pattern": "info.subscriptions.*"
         }
       }
     }
