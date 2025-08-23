@@ -84,9 +84,9 @@ class GiraEndpointAdapter extends utils.Adapter {
         await this.setStateAsync("info.connection", { val: false, ack: true });
         this.log.debug("Pre-created info states");
 
-      await this.setObjectNotExistsAsync("objekte", {
+      await this.setObjectNotExistsAsync("CO@", {
         type: "channel",
-        common: { name: "Objekte" },
+        common: { name: "CO@" },
         native: {},
       });
 
@@ -192,7 +192,7 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       // Pre-create configured endpoint states so they appear immediately in ioBroker
       for (const key of new Set(this.endpointKeys)) {
-        const id = `objekte.${this.sanitizeId(key)}`;
+        const id = `CO@.${this.sanitizeId(key)}`;
         this.keyIdMap.set(key, id);
         const name = this.keyDescMap.get(key) || key;
         await this.setObjectNotExistsAsync(id, {
@@ -202,6 +202,27 @@ class GiraEndpointAdapter extends utils.Adapter {
         });
         this.log.debug(`Pre-created endpoint state ${id}`);
         this.subscribeStates(id);
+      }
+
+      const validIds = new Set(this.keyIdMap.values());
+      const objs = await this.getAdapterObjectsAsync();
+      for (const id of Object.keys(objs)) {
+        const shortId = id.startsWith(`${this.namespace}.`)
+          ? id.slice(this.namespace.length + 1)
+          : id;
+        if (shortId.startsWith("CO@.")) {
+          if (!validIds.has(shortId)) {
+            await this.delObjectAsync(shortId);
+            this.log.debug(`Removed stale endpoint state ${shortId}`);
+          }
+        } else if (shortId.startsWith("objekte.")) {
+          await this.delObjectAsync(shortId);
+        }
+      }
+      try {
+        await this.delObjectAsync("objekte", { recursive: true });
+      } catch {
+        /* ignore */
       }
 
       const ca = cfg.ca ? String(cfg.ca) : undefined;
@@ -336,7 +357,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.pendingUpdates.delete(normalized);
 
           const id =
-            this.keyIdMap.get(normalized) ?? `objekte.${this.sanitizeId(normalized)}`;
+            this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
           this.keyIdMap.set(normalized, id);
           const name = this.keyDescMap.get(normalized) || normalized;
           this.keyDescMap.set(normalized, name);
@@ -400,7 +421,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private sanitizeId(s: string): string {
-    return s.replace(/[^a-z0-9@_\-\.]/gi, "_").toUpperCase();
+    return s.replace(/^CO@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
   }
 
   private async onUnload(callback: () => void): Promise<void> {
@@ -461,7 +482,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
       }
       this.client.send({ type: "call", param: { key: mapped.key, method: "set", value: uidValue } });
-      const mappedId = this.keyIdMap.get(mapped.key) ?? `objekte.${this.sanitizeId(mapped.key)}`;
+      const mappedId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
       this.keyIdMap.set(mapped.key, mappedId);
       this.setState(mappedId, { val: ackVal, ack: true });
       this.pendingUpdates.set(mapped.key, ackVal);
