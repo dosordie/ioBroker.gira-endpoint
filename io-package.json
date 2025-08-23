@@ -35,10 +35,10 @@
     "type": "protocols",
     "connectionType": "cloud",
     "dataSource": "push",
-    "encryptedNative": ["password", "ca", "cert", "key"],
-    "protectedNative": ["password", "ca", "cert", "key"],
     "dependencies": [{"js-controller": ">=5.0.19"}]
   },
+  "encryptedNative": ["password", "ca", "cert", "key"],
+  "protectedNative": ["password", "ca", "cert", "key"],
   "native": {
     "host": "127.0.0.1",
     "port": 80,
@@ -51,14 +51,14 @@
       "minMs": 1000,
       "maxMs": 30000
     },
-      "ca": "",
-      "cert": "",
-      "key": "",
-      "rejectUnauthorized": true,
-      "updateLastEvent": false,
-      "endpointKeys": [],
-      "mappings": []
-    },
+    "ca": "",
+    "cert": "",
+    "key": "",
+    "rejectUnauthorized": true,
+    "updateLastEvent": false,
+    "endpointKeys": [],
+    "mappings": []
+  },
   "objects": [],
   "instanceObjects": [
     {
