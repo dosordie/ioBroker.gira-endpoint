@@ -18,6 +18,7 @@
     "node": ">=18"
   },
   "keywords": [
+    "ioBroker",
     "gira",
     "homeserver",
     "websocket"
