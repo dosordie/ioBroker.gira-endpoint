@@ -15,6 +15,7 @@ So lassen sich Schaltzustände, Sensorwerte oder Szenen aus dem Gira-System naht
 - Einfache Integration in bestehende Smart-Home-Szenarien
 - Konfigurierbare Mappings zwischen beliebigen ioBroker States und Gira-Endpunkten, wahlweise in beide Richtungen
 - Optionale 0/1 ↔ true/false-Umwandlung pro Mapping -> so wird aus einem 0/1 vom HS ein False / True für andere Zwecke
+- Initiale Aktualisierung beim Adapterstart pro Endpunkt einzeln deaktivierbar
 
 ### Usage
 Eingabewerte können sein:  true | false | toggle | String | Number
@@ -79,6 +80,13 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 [GPLv3](LICENSE)
 
 ## Changelog
+
+### 0.2.2
+* Fix sending adapter states without "CO@" prefix to the HomeServer
+* Warning - Subscription failed for CO@..., Also ad info.subscriptions
+
+### 0.2.1
+* Allow disabling initial update per endpoint on adapter start *not releasd*
 
 ### 0.2.0
 * Added configurable mapping between ioBroker states and Gira endpoints
