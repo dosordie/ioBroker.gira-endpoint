@@ -460,7 +460,6 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.log.debug(`Ignoring state change for ${id} because it was just updated from endpoint`);
         return;
       }
-      if (state.ack) return;
       let uidValue: any = state.val;
       let ackVal: any = state.val;
       if (mapped.bool) {
@@ -500,6 +499,14 @@ class GiraEndpointAdapter extends utils.Adapter {
       const mappedId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
       this.keyIdMap.set(mapped.key, mappedId);
       this.setState(mappedId, { val: ackVal, ack: true });
+      if (!state.ack) {
+        this.suppressStateChange.add(id);
+        this.setForeignState(id, { val: state.val, ack: true });
+        const supTimer = this.setTimeout(() => {
+          this.suppressStateChange.delete(id);
+          this.clearTimeout(supTimer);
+        }, 1000);
+      }
       this.pendingUpdates.set(mapped.key, ackVal);
       const timer = this.setTimeout(() => {
         this.pendingUpdates.delete(mapped.key);
