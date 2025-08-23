@@ -83,7 +83,7 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 
 ### 0.2.2
 * Fix sending adapter states without "CO@" prefix to the HomeServer
-* Warnimg - Subscription failed for CO@..., Also ad info.subscriptions
+* Warning - Subscription failed for CO@..., Also ad info.subscriptions
 
 ### 0.2.1
 * Allow disabling initial update per endpoint on adapter start *not releasd*
