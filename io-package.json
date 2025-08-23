@@ -27,7 +27,8 @@
     "authors": ["you"],
     "keywords": ["gira", "homeserver", "websocket"],
     "licenseInformation": {
-      "license": "GPL-3.0-or-later"
+      "license": "GPL-3.0-or-later",
+      "type": "free"
     },
     "enabled": true,
     "materialize": false,
