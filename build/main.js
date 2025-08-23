@@ -208,15 +208,16 @@ class GiraEndpointAdapter extends utils.Adapter {
             for (const id of Object.keys(objs)) {
                 if (id.startsWith("CO@.")) {
                     if (!validIds.has(id)) {
+                        await this.delStateAsync(id);
                         await this.delObjectAsync(id);
                         this.log.debug(`Removed stale endpoint state ${id}`);
                     }
                 }
                 else if (id.startsWith("objekte.")) {
+                    await this.delStateAsync(id);
                     await this.delObjectAsync(id);
                 }
             }
-            
             try {
                 await this.delObjectAsync("objekte", { recursive: true });
             }
