@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "news": {
+      "0.2.2": {
+        "en": "Fix sending adapter states without prefix to HomeServer",
+        "de": "Adapter-eigene States wurden ohne Prefix an den HomeServer gesendet"
+      },
       "0.2.1": {
         "en": "Allow disabling initial update per endpoint on adapter start",
         "de": "Initiale Aktualisierung pro Endpunkt beim Start deaktivierbar"
