@@ -60,6 +60,10 @@ iobroker upload gira-endpoint
 
 Danach Instanz in Admin öffnen und Verbindung einstellen (Host/Port/Path/TLS/Benutzer).
 
+## Tests
+
+Die Tests können mit `npm test` ausgeführt werden.
+
 ## Changelog
 
 ### 0.2.0
