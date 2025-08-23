@@ -300,9 +300,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     return;
                 const entries = [];
                 // Case 1: subscription result lists multiple items
-                if (this.pendingSubscriptions.size &&
-                    typeof data === "object" &&
-                    Array.isArray(data.items)) {
+                if (typeof data === "object" && Array.isArray(data.items)) {
                     const received = new Set();
                     for (const item of data.items) {
                         if (!item)
