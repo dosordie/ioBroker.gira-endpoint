@@ -304,7 +304,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.client.on("close", (info: any) => {
         this.log.warn(`Connection closed (${info?.code || "?"}) ${info?.reason || ""}`);
         this.setState("info.connection", false, true);
-        this.getStatesAsync("info.subscriptions.*").then((states) => {
+        this.getStatesAsync("info.subscriptions.*").then((states: Record<string, ioBroker.State | null>) => {
           for (const id of Object.keys(states)) {
             this.setState(id, { val: false, ack: true });
           }
