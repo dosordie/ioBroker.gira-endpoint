@@ -14,7 +14,7 @@ So lassen sich Schaltzustände, Sensorwerte oder Szenen aus dem Gira-System naht
 - Echtzeitkommunikation für schnelle Automatisierungen
 - Einfache Integration in bestehende Smart-Home-Szenarien
 - Konfigurierbare Mappings zwischen beliebigen ioBroker States und Gira-Endpunkten, wahlweise in beide Richtungen
-- Optionale 0/1 ↔ true/false-Umwandlung pro Mapping -> so eird aus einem 0/1 vom HS ein False / True für andere Zwecke
+- Optionale 0/1 ↔ true/false-Umwandlung pro Mapping -> so wird aus einem 0/1 vom HS ein False / True für andere Zwecke
 
 ### Usage
 Eingabewerte können sein:  true | false | toggle | String | Number
