@@ -528,7 +528,19 @@ class GiraEndpointAdapter extends utils.Adapter {
         try {
             this.log.info("Shutting down...");
             this.client?.removeAllListeners();
-            this.client?.close();
+            if (this.client) {
+                try {
+                    this.client.unsubscribe(this.endpointKeys);
+                    const states = await this.getStatesAsync("info.subscriptions.*");
+                    for (const id of Object.keys(states)) {
+                        await this.setStateAsync(id, { val: false, ack: true });
+                    }
+                }
+                catch (err) {
+                    this.log.error(`Unsubscribe failed: ${err}`);
+                }
+                this.client.close();
+            }
         }
         catch (e) {
             this.log.error(`onUnload error: ${e}`);
