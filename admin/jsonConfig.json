@@ -237,7 +237,7 @@
         "subscriptionsTable": {
           "type": "pattern",
           "label": "Abonnementstatus",
-          "pattern": "info.subscriptions.*"
+          "pattern": ":instance:.info.subscriptions.*"
         }
       }
     }
