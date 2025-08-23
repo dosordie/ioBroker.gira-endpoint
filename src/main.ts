@@ -312,8 +312,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       });
 
       this.client.on("error", (err: any) => {
-        this.log.error(`Client error: ${err?.message || err}`);
+        const msg = `Client error: ${err?.message || err}`;
+        this.log.error(msg);
         this.setState("info.lastError", String(err?.message || err), true);
+        this.notifyAdmin(msg);
       });
 
       this.client.on("event", async (payload: any) => {
