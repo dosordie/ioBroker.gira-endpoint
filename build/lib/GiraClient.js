@@ -15,6 +15,7 @@ class GiraClient extends events_1.EventEmitter {
         super();
         this.closedByUser = false;
         this.awaitingPong = false;
+        this.contextResolvers = new Map();
         // Defaults + Merge ohne doppelte Literal-Keys (TS2783 vermeiden)
         const defaults = {
             host: "",
@@ -91,11 +92,21 @@ class GiraClient extends events_1.EventEmitter {
                     const msg = payload.message ||
                         payload.error ||
                         `Error code ${payload.code}`;
+                    const ctx = payload.context;
+                    if (ctx && this.contextResolvers.has(ctx)) {
+                        this.contextResolvers.get(ctx)?.reject(new Error(msg));
+                        this.contextResolvers.delete(ctx);
+                    }
                     this.emit("error", new Error(msg));
                     return;
                 }
                 this.normalizeData(payload?.data);
                 this.emit("event", payload);
+                const ctx = payload?.context;
+                if (ctx && this.contextResolvers.has(ctx)) {
+                    this.contextResolvers.get(ctx)?.resolve(payload);
+                    this.contextResolvers.delete(ctx);
+                }
             }
             catch (err) {
                 this.emit("error", err);
@@ -117,6 +128,37 @@ class GiraClient extends events_1.EventEmitter {
             const data = typeof obj === "string" ? obj : JSON.stringify(obj);
             this.ws.send(data);
         }
+    }
+    call(key, method, params, context) {
+        const param = { key, method };
+        if (params !== undefined) {
+            if (params && typeof params === "object" && !Array.isArray(params)) {
+                Object.assign(param, params);
+            }
+            else {
+                param.value = params;
+            }
+        }
+        const msg = { type: "call", param };
+        if (context) {
+            msg.context = context;
+            return new Promise((resolve, reject) => {
+                this.contextResolvers.set(context, { resolve, reject });
+                this.send(msg);
+            });
+        }
+        this.send(msg);
+    }
+    select(filter, context) {
+        const msg = { type: "select", param: { filter } };
+        if (context) {
+            msg.context = context;
+            return new Promise((resolve, reject) => {
+                this.contextResolvers.set(context, { resolve, reject });
+                this.send(msg);
+            });
+        }
+        this.send(msg);
     }
     subscribe(keys) {
         this.send({ type: "subscribe", param: { keys } });

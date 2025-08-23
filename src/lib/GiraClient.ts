@@ -50,6 +50,10 @@ export class GiraClient extends EventEmitter {
   private pingTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
   private awaitingPong = false;
+  private contextResolvers = new Map<
+    string,
+    { resolve: (value: any) => void; reject: (reason?: any) => void }
+  >();
 
   constructor(opts: GiraClientOptions) {
     super();
@@ -137,11 +141,21 @@ export class GiraClient extends EventEmitter {
             (payload as any).message ||
             (payload as any).error ||
             `Error code ${payload.code}`;
+          const ctx = (payload as any).context;
+          if (ctx && this.contextResolvers.has(ctx)) {
+            this.contextResolvers.get(ctx)?.reject(new Error(msg));
+            this.contextResolvers.delete(ctx);
+          }
           this.emit("error", new Error(msg));
           return;
         }
         this.normalizeData(payload?.data);
         this.emit("event", payload);
+        const ctx = payload?.context;
+        if (ctx && this.contextResolvers.has(ctx)) {
+          this.contextResolvers.get(ctx)?.resolve(payload);
+          this.contextResolvers.delete(ctx);
+        }
       } catch (err) {
         this.emit("error", err);
       }
@@ -164,6 +178,43 @@ export class GiraClient extends EventEmitter {
       const data = typeof obj === "string" ? obj : JSON.stringify(obj);
       this.ws.send(data);
     }
+  }
+
+  public call(
+    key: string,
+    method: string,
+    params?: any,
+    context?: string
+  ): Promise<any> | void {
+    const param: any = { key, method };
+    if (params !== undefined) {
+      if (params && typeof params === "object" && !Array.isArray(params)) {
+        Object.assign(param, params);
+      } else {
+        param.value = params;
+      }
+    }
+    const msg: any = { type: "call", param };
+    if (context) {
+      msg.context = context;
+      return new Promise((resolve, reject) => {
+        this.contextResolvers.set(context, { resolve, reject });
+        this.send(msg);
+      });
+    }
+    this.send(msg);
+  }
+
+  public select(filter: object, context?: string): Promise<any> | void {
+    const msg: any = { type: "select", param: { filter } };
+    if (context) {
+      msg.context = context;
+      return new Promise((resolve, reject) => {
+        this.contextResolvers.set(context, { resolve, reject });
+        this.send(msg);
+      });
+    }
+    this.send(msg);
   }
 
   public subscribe(keys: string[]): void {

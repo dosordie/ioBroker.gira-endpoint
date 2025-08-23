@@ -592,7 +592,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           }
         }
       }
-      this.client.send({ type: "call", param: { key: mapped.key, method: "set", value: uidValue } });
+      this.client.call(mapped.key, "set", uidValue);
       const mappedId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
       this.keyIdMap.set(mapped.key, mappedId);
       this.setState(mappedId, { val: ackVal, ack: true });
@@ -659,7 +659,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
     }
     const normKey = this.normalizeKey(key);
-    this.client.send({ type: "call", param: { key: normKey, method, value: uidValue } });
+    this.client.call(normKey, method, uidValue);
     const mappedForeign = this.reverseMap.get(normKey);
     if (mappedForeign) {
       let mappedVal = ackVal;
