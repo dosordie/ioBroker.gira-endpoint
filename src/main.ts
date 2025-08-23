@@ -341,7 +341,8 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (key === undefined) continue;
             const normalized = this.normalizeKey(key);
             received.add(normalized);
-            const success = !("error" in item);
+            const success =
+              item.code !== undefined ? item.code === 0 : !("error" in item);
             const subId = `info.subscriptions.${this.sanitizeId(normalized)}`;
             await this.extendObjectAsync(subId, {
               type: "state",
