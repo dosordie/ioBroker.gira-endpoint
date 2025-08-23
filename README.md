@@ -81,6 +81,9 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 
 ## Changelog
 
+### 0.2.2
+* Fix sending adapter states without "CO@" prefix to the HomeServer
+
 ### 0.2.1
 * Allow disabling initial update per endpoint on adapter start
 

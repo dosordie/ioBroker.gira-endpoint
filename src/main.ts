@@ -578,7 +578,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
     }
     const normKey = this.normalizeKey(key);
-    this.client.send({ type: "call", param: { key, method, value: uidValue } });
+    this.client.send({ type: "call", param: { key: normKey, method, value: uidValue } });
     const mappedForeign = this.reverseMap.get(normKey);
     if (mappedForeign) {
       let mappedVal = ackVal;
