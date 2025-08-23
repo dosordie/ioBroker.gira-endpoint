@@ -38,12 +38,13 @@ type ResolvedGiraClientOptions = Omit<GiraClientOptions, "reconnect"> & {
 };
 
 export class GiraClient extends EventEmitter {
-  private ws?: WebSocket;
+  private ws?: WebSocket & { ping: () => void; terminate: () => void };
   private closedByUser = false;
   private opts: ResolvedGiraClientOptions;
   private backoffMs: number;
   private pingTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
+  private awaitingPong = false;
 
   constructor(opts: GiraClientOptions) {
     super();
@@ -93,15 +94,20 @@ export class GiraClient extends EventEmitter {
       }
     }
 
-    this.ws = new WebSocket(url, wsOpts);
+    const ws = (this.ws = new WebSocket(url, wsOpts) as any);
 
-    this.ws.on("open", () => {
+    ws.on("open", () => {
       this.emit("open");
       this.backoffMs = this.opts.reconnect.minMs;
+      this.awaitingPong = false;
       this.startPing();
     });
 
-    this.ws.on("message", (data) => {
+    ws.on("pong", () => {
+      this.awaitingPong = false;
+    });
+
+    ws.on("message", (data: any) => {
       try {
         const text = typeof data === "string" ? data : data.toString("utf8");
         // Gira-Event-Format: hier anpassen. Wir nehmen zunächst JSON an.
@@ -116,13 +122,13 @@ export class GiraClient extends EventEmitter {
       }
     });
 
-    this.ws.on("close", (code, reason) => {
+    ws.on("close", (code: any, reason: any) => {
       this.stopPing();
       this.emit("close", { code, reason: reason.toString() });
       if (!this.closedByUser) this.scheduleReconnect();
     });
 
-    this.ws.on("error", (err) => {
+    ws.on("error", (err: any) => {
       this.emit("error", err);
       // ws löst danach "close" aus → Reconnect wird dort geplant
     });
@@ -189,13 +195,22 @@ export class GiraClient extends EventEmitter {
     this.stopPing();
     if (!this.opts.pingIntervalMs || this.opts.pingIntervalMs <= 0) return;
     this.pingTimer = setInterval(() => {
-      try { this.send({ type: "ping", ts: Date.now() }); } catch { /* ignore */ }
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      if (this.awaitingPong) {
+        try { this.ws.terminate(); } catch { /* ignore */ }
+        return;
+      }
+      try {
+        this.awaitingPong = true;
+        this.ws.ping();
+      } catch { /* ignore */ }
     }, this.opts.pingIntervalMs);
   }
 
   private stopPing(): void {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = undefined;
+    this.awaitingPong = false;
   }
 
   private scheduleReconnect(): void {

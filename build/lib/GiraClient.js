@@ -14,6 +14,7 @@ class GiraClient extends events_1.EventEmitter {
     constructor(opts) {
         super();
         this.closedByUser = false;
+        this.awaitingPong = false;
         // Defaults + Merge ohne doppelte Literal-Keys (TS2783 vermeiden)
         const defaults = {
             host: "",
@@ -57,13 +58,17 @@ class GiraClient extends events_1.EventEmitter {
                 this.emit("error", err);
             }
         }
-        this.ws = new ws_1.default(url, wsOpts);
-        this.ws.on("open", () => {
+        const ws = (this.ws = new ws_1.default(url, wsOpts));
+        ws.on("open", () => {
             this.emit("open");
             this.backoffMs = this.opts.reconnect.minMs;
+            this.awaitingPong = false;
             this.startPing();
         });
-        this.ws.on("message", (data) => {
+        ws.on("pong", () => {
+            this.awaitingPong = false;
+        });
+        ws.on("message", (data) => {
             try {
                 const text = typeof data === "string" ? data : data.toString("utf8");
                 // Gira-Event-Format: hier anpassen. Wir nehmen zunächst JSON an.
@@ -81,13 +86,13 @@ class GiraClient extends events_1.EventEmitter {
                 this.emit("error", err);
             }
         });
-        this.ws.on("close", (code, reason) => {
+        ws.on("close", (code, reason) => {
             this.stopPing();
             this.emit("close", { code, reason: reason.toString() });
             if (!this.closedByUser)
                 this.scheduleReconnect();
         });
-        this.ws.on("error", (err) => {
+        ws.on("error", (err) => {
             this.emit("error", err);
             // ws löst danach "close" aus → Reconnect wird dort geplant
         });
@@ -155,8 +160,18 @@ class GiraClient extends events_1.EventEmitter {
         if (!this.opts.pingIntervalMs || this.opts.pingIntervalMs <= 0)
             return;
         this.pingTimer = setInterval(() => {
+            if (!this.ws || this.ws.readyState !== ws_1.default.OPEN)
+                return;
+            if (this.awaitingPong) {
+                try {
+                    this.ws.terminate();
+                }
+                catch { /* ignore */ }
+                return;
+            }
             try {
-                this.send({ type: "ping", ts: Date.now() });
+                this.awaitingPong = true;
+                this.ws.ping();
             }
             catch { /* ignore */ }
         }, this.opts.pingIntervalMs);
@@ -165,6 +180,7 @@ class GiraClient extends events_1.EventEmitter {
         if (this.pingTimer)
             clearInterval(this.pingTimer);
         this.pingTimer = undefined;
+        this.awaitingPong = false;
     }
     scheduleReconnect() {
         const { maxMs } = this.opts.reconnect;
