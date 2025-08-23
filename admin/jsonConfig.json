@@ -134,6 +134,7 @@
           "style": {
             "fontSize": "0.8rem"
           },
+          "confirmRowDelete": true,
           "xs": 12,
           "sm": 12,
           "md": 12,
@@ -181,6 +182,7 @@
           "style": {
             "fontSize": "0.8rem"
           },
+          "confirmRowDelete": true,
           "xs": 12,
           "sm": 12,
           "md": 12,
