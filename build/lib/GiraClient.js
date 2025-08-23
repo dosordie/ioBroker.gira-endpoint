@@ -24,7 +24,7 @@ class GiraClient extends events_1.EventEmitter {
             path: "/",
             username: "",
             password: "",
-            authHeader: false,
+            authHeader: true,
             pingIntervalMs: 30000,
             reconnect: { minMs: 1000, maxMs: 30000 },
             tls: {},
