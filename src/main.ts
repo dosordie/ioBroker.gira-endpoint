@@ -212,14 +212,16 @@ class GiraEndpointAdapter extends utils.Adapter {
           : fullId;
         if (id.startsWith("CO@.")) {
           if (!validIds.has(id)) {
+            this.log.warn(`Deleting stale endpoint state ${id}`);
             await this.delObjectAsync(id, { recursive: true });
-            this.log.debug(`Removed stale endpoint state ${id}`);
           }
         } else if (id.startsWith("objekte.")) {
+          this.log.warn(`Deleting legacy object ${id}`);
           await this.delObjectAsync(id, { recursive: true });
         }
       }
       try {
+        this.log.warn('Deleting legacy object root "objekte"');
         await this.delObjectAsync("objekte", { recursive: true });
       } catch {
         /* ignore */
