@@ -93,7 +93,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             const host = String(cfg.host ?? "").trim();
             const port = Number(cfg.port ?? 80);
             const ssl = Boolean(cfg.ssl ?? false);
-            const path = String(cfg.path ?? "/endpoints/ws").trim() || "/endpoints/ws";
+            const path = "/endpoints/ws";
             const username = String(cfg.username ?? "");
             const password = String(cfg.password ?? "");
             const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
