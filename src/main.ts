@@ -206,16 +206,17 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       const validIds = new Set(this.keyIdMap.values());
       const objs = await this.getAdapterObjectsAsync();
-      for (const id of Object.keys(objs)) {
+      for (const fullId of Object.keys(objs)) {
+        const id = fullId.startsWith(this.namespace + ".")
+          ? fullId.slice(this.namespace.length + 1)
+          : fullId;
         if (id.startsWith("CO@.")) {
           if (!validIds.has(id)) {
-            await this.delStateAsync(id);
-            await this.delObjectAsync(id);
+            await this.delObjectAsync(id, { recursive: true });
             this.log.debug(`Removed stale endpoint state ${id}`);
           }
         } else if (id.startsWith("objekte.")) {
-          await this.delStateAsync(id);
-          await this.delObjectAsync(id);
+          await this.delObjectAsync(id, { recursive: true });
         }
       }
       try {
