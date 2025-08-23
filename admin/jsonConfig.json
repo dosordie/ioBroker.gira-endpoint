@@ -229,17 +229,6 @@
           ]
         }
       }
-    },
-    "subscriptionsTab": {
-      "type": "panel",
-      "label": "Abonnements",
-      "items": {
-        "subscriptionsTable": {
-          "type": "pattern",
-          "label": "Abonnementstatus",
-          "pattern": ":instance:.info.subscriptions.*"
-        }
-      }
     }
   }
 }
