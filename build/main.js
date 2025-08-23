@@ -36,6 +36,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const utils = __importStar(require("@iobroker/adapter-core"));
 const GiraClient_1 = require("./lib/GiraClient");
 class GiraEndpointAdapter extends utils.Adapter {
+    notifyAdmin(message) {
+        this.sendTo("admin", "messageBox", {
+            title: "gira-endpoint",
+            message,
+        });
+    }
     constructor(options = {}) {
         super({
             ...options,
@@ -211,17 +217,23 @@ class GiraEndpointAdapter extends utils.Adapter {
                     : fullId;
                 if (id.startsWith("CO@.")) {
                     if (!validIds.has(id)) {
-                        this.log.warn(`Deleting stale endpoint state ${id}`);
+                        const msg = `Deleting stale endpoint state ${id}`;
+                        this.log.info(msg);
+                        this.notifyAdmin(msg);
                         await this.delObjectAsync(id, { recursive: true });
                     }
                 }
                 else if (id.startsWith("objekte.")) {
-                    this.log.warn(`Deleting legacy object ${id}`);
+                    const msg = `Deleting legacy object ${id}`;
+                    this.log.info(msg);
+                    this.notifyAdmin(msg);
                     await this.delObjectAsync(id, { recursive: true });
                 }
             }
             try {
-                this.log.warn('Deleting legacy object root "objekte"');
+                const msg = 'Deleting legacy object root "objekte"';
+                this.log.info(msg);
+                this.notifyAdmin(msg);
                 await this.delObjectAsync("objekte", { recursive: true });
             }
             catch {
@@ -441,8 +453,6 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.log.debug(`Ignoring state change for ${id} because it was just updated from endpoint`);
                 return;
             }
-            if (state.ack)
-                return;
             let uidValue = state.val;
             let ackVal = state.val;
             if (mapped.bool) {
@@ -489,6 +499,14 @@ class GiraEndpointAdapter extends utils.Adapter {
             const mappedId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
             this.keyIdMap.set(mapped.key, mappedId);
             this.setState(mappedId, { val: ackVal, ack: true });
+            if (!state.ack) {
+                this.suppressStateChange.add(id);
+                this.setForeignState(id, { val: state.val, ack: true });
+                const supTimer = this.setTimeout(() => {
+                    this.suppressStateChange.delete(id);
+                    this.clearTimeout(supTimer);
+                }, 1000);
+            }
             this.pendingUpdates.set(mapped.key, ackVal);
             const timer = this.setTimeout(() => {
                 this.pendingUpdates.delete(mapped.key);
