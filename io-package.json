@@ -50,7 +50,6 @@
     "host": "127.0.0.1",
     "port": 80,
     "ssl": false,
-    "path": "/endpoints/ws",
     "username": "",
     "password": "",
     "pingIntervalMs": 30000,
