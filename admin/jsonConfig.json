@@ -40,6 +40,17 @@
           "lg": 4,
           "xl": 4
         },
+        "path": {
+          "type": "text",
+          "label": "Pfad",
+          "default": "/endpoints/ws",
+          "placeholder": "/",
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 4,
+          "xl": 4
+        },
         "authHeader": {
           "type": "header",
           "text": "Authentifizierung",
@@ -131,7 +142,6 @@
         "endpointKeys": {
           "type": "table",
           "label": "Hier die Endpunkt IDs ohne das CO@ eintragen",
-          "style": "font-size: 0.8rem;",
           "xs": 12,
           "sm": 12,
           "md": 12,
@@ -176,7 +186,6 @@
         "mappings": {
           "type": "table",
           "label": "Hier die Endpunkt IDs und ioBroker Objekte eintragen",
-          "style": "font-size: 0.8rem;",
           "xs": 12,
           "sm": 12,
           "md": 12,
