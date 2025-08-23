@@ -215,9 +215,20 @@ class GiraEndpointAdapter extends utils.Adapter {
         });
         this.log.debug(`Pre-created endpoint state ${id}`);
         this.subscribeStates(id);
+
+        const subId = `info.subscriptions.${this.sanitizeId(key)}`;
+        await this.setObjectNotExistsAsync(subId, {
+          type: "state",
+          common: { name: key, type: "boolean", role: "indicator", read: true, write: false },
+          native: {},
+        });
+        await this.setStateAsync(subId, { val: false, ack: true });
       }
 
       const validIds = new Set(this.keyIdMap.values());
+      const validSubIds = new Set(
+        this.endpointKeys.map((k) => `info.subscriptions.${this.sanitizeId(k)}`)
+      );
       const objs = await this.getAdapterObjectsAsync();
       for (const fullId of Object.keys(objs)) {
         const id = fullId.startsWith(this.namespace + ".")
@@ -226,6 +237,13 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (id.startsWith("CO@.")) {
           if (!validIds.has(id)) {
             const msg = `Deleting stale endpoint state ${id}`;
+            this.log.info(msg);
+            this.notifyAdmin(msg);
+            await this.delObjectAsync(id, { recursive: true });
+          }
+        } else if (id.startsWith("info.subscriptions.")) {
+          if (!validSubIds.has(id)) {
+            const msg = `Deleting stale subscription state ${id}`;
             this.log.info(msg);
             this.notifyAdmin(msg);
             await this.delObjectAsync(id, { recursive: true });
