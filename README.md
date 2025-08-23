@@ -66,11 +66,14 @@ iobroker upload gira-endpoint
 #iobroker add gira-endpoint
 
 ```
-### 💙 Unterstützung
+
+## 💙 Unterstützung
+
 Ich bastle an diesem Adapter in meiner Freizeit.  
-Wenn er dir gefällt oder dir weiterhilft, freue ich mich mega über eine kleine Spende:
+Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spende:
 
 [![Spenden via PayPal](https://img.shields.io/badge/Spenden-PayPal-blue.svg?logo=paypal)](https://www.paypal.com/paypalme/AuhuberD)
+
 
 ## Lizenz
 [GPLv3](LICENSE)
