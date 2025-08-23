@@ -346,7 +346,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             );
             this.suppressStateChange.add(mappedForeign.stateId);
             await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
-            setTimeout(() => this.suppressStateChange.delete(mappedForeign.stateId), 1000);
+            const timer = this.setTimeout(() => {
+              this.suppressStateChange.delete(mappedForeign.stateId);
+              this.clearTimeout(timer);
+            }, 1000);
           }
         }
       });
@@ -447,7 +450,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.keyIdMap.set(mapped.key, mappedId);
       this.setState(mappedId, { val: ackVal, ack: true });
       this.pendingUpdates.set(mapped.key, ackVal);
-      setTimeout(() => this.pendingUpdates.delete(mapped.key), 1000);
+      const timer = this.setTimeout(() => {
+        this.pendingUpdates.delete(mapped.key);
+        this.clearTimeout(timer);
+      }, 1000);
       return;
     }
 
@@ -527,10 +533,16 @@ class GiraEndpointAdapter extends utils.Adapter {
       );
       this.suppressStateChange.add(mappedForeign.stateId);
       this.setForeignState(mappedForeign.stateId, { val: mappedVal, ack: true });
-      setTimeout(() => this.suppressStateChange.delete(mappedForeign.stateId), 1000);
+      const timer = this.setTimeout(() => {
+        this.suppressStateChange.delete(mappedForeign.stateId);
+        this.clearTimeout(timer);
+      }, 1000);
     }
     this.pendingUpdates.set(normKey, ackVal);
-    setTimeout(() => this.pendingUpdates.delete(normKey), 1000);
+    const timer = this.setTimeout(() => {
+      this.pendingUpdates.delete(normKey);
+      this.clearTimeout(timer);
+    }, 1000);
     this.setState(id, { val: ackVal, ack: true });
   }
 }

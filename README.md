@@ -9,30 +9,39 @@ Damit können Datenpunkte in Echtzeit zwischen dem Homeserver und ioBroker ausge
 So lassen sich Schaltzustände, Sensorwerte oder Szenen aus dem Gira-System nahtlos in ioBroker integrieren und dort weiterverarbeiten.
 
 ### Features
-- Verbindung über WebSocket (WS/WSS)
-- Senden und Empfangen von Datenpunkten
+- Verbindung über WebSocket (WS/WSS) (performant, spart unnötigen Overhead)
+- Senden und Empfangen von verscheidenen Datenpunkten
 - Echtzeitkommunikation für schnelle Automatisierungen
 - Einfache Integration in bestehende Smart-Home-Szenarien
 - Konfigurierbare Mappings zwischen beliebigen ioBroker States und Gira-Endpunkten, wahlweise in beide Richtungen
-- Optionale 0/1 ↔ true/false-Umwandlung pro Mapping
+- Optionale 0/1 ↔ true/false-Umwandlung pro Mapping -> so eird aus einem 0/1 vom HS ein False / True für andere Zwecke
 
 ### Usage
 Eingabewerte können sein:  true | false | toggle | String | Number
 
-- `true` / `false` → werden zu `1` / `0` im HomeServer umgewandelt  
+- `true` / `false` → werden zu `1` / `0` im HomeServer umgewandelt  (wenn checkox aktiv)
 - `toggle` → schaltet den aktuellen Wert im HomeServer um  
-- `String` und `Number` → werden direkt durchgereicht  
+- `String` und `Number` → werden direkt durchgereicht
+-  Bei den Mapping Endpunkten kann ein ioBroker Objekt (z.B. 0_userdata.0.mappingtest) eines anderen Adapters angegeben werden, das dann zum HS in das angegebene KO (CO@) durchgereicht wird.
+   Hier kann die Richtung per Checkbos ausgewählt werden falls eine Richtung nicht bedient werden soll.
 
-### Grundlage
-Der Adapter wurde nachgebaut auf Basis von:  
-👉 [node-red-contrib-gira-endpoint](https://github.com/luckyy0815/node-red-contrib-gira-endpoint)
+## Homeserver konfigurieren
 
----
+1. **WebSocket in den Projekteinstellungen aktivieren**
++   In den *Projekteinstellungen* unter "KO-Gateway" den WebSocket aktivieren und dem WebSocket-Benutzer Zugriff erlauben.
++   ![HS-Projekteinstellungen](docs/hs-projekteinstellungen.png)
 
-## Lizenz
-[GPLv3](LICENSE)
+2. **WebSocket-Benutzer anlegen**  
++   Einen Benutzer z. B. `websocket` erstellen und ihm Lese- und Schreibrechte für die entsprechende Benutzergruppe zuweisen.  
++   ![HS-User](docs/hs-user.png)
 
-## Installation (Github) *Empfohlen*
+3. **Kommunikationsobjekte freigeben**  
++   Bei jedem benötigten Kommunikationsobjekt die WebSocket-Gruppe sowohl für Lesen als auch Schreiben eintragen.  
++   ![HS-KO-Einstellungen](docs/hs-koeinstellungen.png)
+
+
+
+## Installation von (Github) *Solange noch Beta*
 
 Bis der Adapter Offiziell ist:
 Im ioBroker unter Adapter auf den Expertenmodus schalten, Github anklicken und https://github.com/dosordie/ioBroker.gira-endpoint/ bei Benutzerdefiniert eintragen
@@ -40,7 +49,7 @@ Im ioBroker unter Adapter auf den Expertenmodus schalten, Github anklicken und h
 ## Installation (lokal) *Für test ect.*
 
 ```bash
-Variante A (empfohlen): per Tarball installieren 
+Per Tarball installieren 
 # im Projektordner
 cd ~/iobroker.gira-endpoint
 git pull --ff-only
@@ -58,7 +67,16 @@ iobroker upload gira-endpoint
 
 ```
 
-Danach Instanz in Admin öffnen und Verbindung einstellen (Host/Port/Path/TLS/Benutzer).
+## 💙 Unterstützung
+
+Ich bastle an diesem Adapter in meiner Freizeit.  
+Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spende:
+
+[![Spenden via PayPal](https://img.shields.io/badge/Spenden-PayPal-blue.svg?logo=paypal)](https://www.paypal.com/paypalme/AuhuberD)
+
+
+## Lizenz
+[GPLv3](LICENSE)
 
 ## Changelog
 
@@ -68,8 +86,11 @@ Danach Instanz in Admin öffnen und Verbindung einstellen (Host/Port/Path/TLS/Be
 ### 0.1.0
 * Adapter basically working and tested
 
-### 0.0.1
-* Initial version (WS client, reconnect, basic event mapping)
-
 ## License
 GNU General Public License v3.0
+
+## Grundlage
+Der Adapter wurde nachgebaut auf Basis von:  
+👉 [node-red-contrib-gira-endpoint](https://github.com/luckyy0815/node-red-contrib-gira-endpoint)
+
+---
