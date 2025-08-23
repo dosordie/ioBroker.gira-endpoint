@@ -12,7 +12,6 @@
         "de": "Adapter grob lauffähig und getestet"
       }
     },
-    "title": "Gira Endpoint",
     "titleLang": {
       "en": "Gira Endpoint",
       "de": "Gira Endpoint"
@@ -26,8 +25,10 @@
     "icon": "gira-endpoint.svg",
       "extIcon": "https://raw.githubusercontent.com/dosordie/iobroker.gira-endpoint/main/admin/gira-endpoint.svg",
     "authors": ["you"],
-    "keywords": ["ioBroker", "adapter", "gira", "homeserver", "websocket"],
-    "license": "GPL-3.0-or-later",
+    "keywords": ["gira", "homeserver", "websocket"],
+    "licenseInformation": {
+      "license": "GPL-3.0-or-later"
+    },
     "enabled": true,
     "materialize": false,
     "adminUI": { "config": "json" },
@@ -35,6 +36,7 @@
     "type": "protocols",
     "connectionType": "cloud",
     "dataSource": "push",
+    "tier": 2,
     "dependencies": [{"js-controller": ">=5.0.19"}]
   },
   "encryptedNative": ["password", "ca", "cert", "key"],

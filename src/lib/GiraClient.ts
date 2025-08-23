@@ -43,6 +43,7 @@ export class GiraClient extends EventEmitter {
   private opts: ResolvedGiraClientOptions;
   private backoffMs: number;
   private pingTimer?: NodeJS.Timeout;
+  private reconnectTimer?: NodeJS.Timeout;
 
   constructor(opts: GiraClientOptions) {
     super();
@@ -68,6 +69,10 @@ export class GiraClient extends EventEmitter {
 
   public connect(): void {
     this.closedByUser = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer as any);
+      this.reconnectTimer = undefined;
+    }
     const scheme = this.opts.ssl ? "wss" : "ws";
 
     const headers: Record<string, string> = {};
@@ -141,6 +146,10 @@ export class GiraClient extends EventEmitter {
   public close(): void {
     this.closedByUser = true;
     this.stopPing();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer as any);
+      this.reconnectTimer = undefined;
+    }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.close();
   }
 
@@ -193,7 +202,12 @@ export class GiraClient extends EventEmitter {
     const { maxMs } = this.opts.reconnect;
     const jitterDelta = this.backoffMs * BACKOFF_JITTER * (Math.random() * 2 - 1);
     const delay = Math.min(maxMs, Math.max(0, this.backoffMs + jitterDelta));
-    setTimeout(() => {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer as any);
+      this.reconnectTimer = undefined;
+    }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
       if (!this.closedByUser) this.connect();
     }, delay);
     this.backoffMs = Math.min(maxMs, Math.max(this.opts.reconnect.minMs, this.backoffMs * BACKOFF_FACTOR));
