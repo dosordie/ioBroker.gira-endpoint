@@ -329,6 +329,39 @@ class GiraEndpointAdapter extends utils.Adapter {
         const data = payload?.data;
         if (!data) return;
 
+        if (payload.type === "unsubscribe" && Array.isArray((data as any).items)) {
+          for (const item of (data as any).items) {
+            if (!item) continue;
+            const key =
+              item.uid !== undefined
+                ? String(item.uid)
+                : item.key !== undefined
+                ? String(item.key)
+                : undefined;
+            if (key === undefined) continue;
+            const normalized = this.normalizeKey(key);
+            const subId = `info.subscriptions.${this.sanitizeId(normalized)}`;
+            await this.extendObjectAsync(subId, {
+              type: "state",
+              common: {
+                name: normalized,
+                type: "boolean",
+                role: "indicator",
+                read: true,
+                write: false,
+              },
+              native: {},
+            });
+            await this.setStateAsync(subId, { val: false, ack: true });
+            if (item.code !== undefined && item.code !== 0) {
+              const msg = `Unsubscribe failed for ${normalized} (${item.code})`;
+              this.log.warn(msg);
+              this.notifyAdmin(msg);
+            }
+          }
+          return;
+        }
+
         const entries: Array<{ key: string; value: any }> = [];
 
         // Case 1: subscription result lists multiple items
