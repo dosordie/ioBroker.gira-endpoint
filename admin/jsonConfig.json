@@ -139,7 +139,6 @@
           "md": 12,
           "lg": 12,
           "xl": 12,
-          "confirmDelete": true,
           "items": [
             {
               "type": "text",
@@ -187,7 +186,6 @@
           "md": 12,
           "lg": 12,
           "xl": 12,
-          "confirmDelete": true,
           "items": [
             {
               "type": "text",
