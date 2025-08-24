@@ -123,6 +123,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         });
         this.endpointKeys = [];
         this.keyIdMap = new Map();
+        this.idKeyMap = new Map();
         this.keyDescMap = new Map();
         this.forwardMap = new Map();
         this.reverseMap = new Map();
@@ -165,11 +166,6 @@ class GiraEndpointAdapter extends utils.Adapter {
             await this.setObjectNotExistsAsync("info.lastEvent", {
                 type: "state",
                 common: { name: "Last event", type: "string", role: "json", read: true, write: false },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync("info.subscriptions", {
-                type: "channel",
-                common: { name: "Subscriptions" },
                 native: {},
             });
             await this.setStateAsync("info.connection", { val: false, ack: true });
@@ -323,23 +319,44 @@ class GiraEndpointAdapter extends utils.Adapter {
             }
             // Pre-create configured endpoint states so they appear immediately in ioBroker
             for (const key of new Set(this.endpointKeys)) {
-                const id = `CO@.${this.sanitizeId(key)}`;
-                this.keyIdMap.set(key, id);
+                const baseId = `CO@.${this.sanitizeId(key)}`;
+                this.keyIdMap.set(key, baseId);
+                this.idKeyMap.set(baseId, key);
                 const name = this.keyDescMap.get(key) || key;
-                await this.setObjectNotExistsAsync(id, {
-                    type: "state",
-                    common: { name, type: "mixed", role: "state", read: true, write: true },
+                await this.setObjectNotExistsAsync(baseId, {
+                    type: "channel",
+                    common: { name },
                     native: {},
                 });
-                this.log.debug(`Pre-created endpoint state ${id}`);
-                this.subscribeStates(id);
-                const subId = `info.subscriptions.${this.sanitizeId(key)}`;
-                await this.setObjectNotExistsAsync(subId, {
+                await this.setObjectNotExistsAsync(`${baseId}.value`, {
                     type: "state",
-                    common: { name: key, type: "boolean", role: "indicator", read: true, write: false },
+                    common: { name: "value", type: "mixed", role: "state", read: true, write: true },
                     native: {},
                 });
-                await this.setStateAsync(subId, { val: false, ack: true });
+                await this.setObjectNotExistsAsync(`${baseId}.subscription`, {
+                    type: "state",
+                    common: {
+                        name: "subscription",
+                        type: "boolean",
+                        role: "indicator",
+                        read: true,
+                        write: false,
+                    },
+                    native: {},
+                });
+                await this.setStateAsync(`${baseId}.subscription`, { val: false, ack: true });
+                await this.setObjectNotExistsAsync(`${baseId}.status`, {
+                    type: "state",
+                    common: { name: "status", type: "string", role: "state", read: true, write: true },
+                    native: {},
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.meta`, {
+                    type: "state",
+                    common: { name: "meta", type: "string", role: "json", read: true, write: true },
+                    native: {},
+                });
+                this.log.debug(`Pre-created endpoint channel ${baseId}`);
+                this.subscribeStates(`${baseId}.value`);
             }
             for (const key of new Set(this.archiveKeys)) {
                 const baseId = `DA@.${this.sanitizeArchiveId(key)}`;
@@ -369,16 +386,16 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.subscribeStates(`${baseId}.meta`);
                 this.subscribeStates(`${baseId}.query`);
             }
-            const validIds = new Set(this.keyIdMap.values());
+            const validBaseIds = new Set(this.endpointKeys.map((k) => `CO@.${this.sanitizeId(k)}`));
             const validArchiveBases = new Set(this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`));
-            const validSubIds = new Set(this.endpointKeys.map((k) => `info.subscriptions.${this.sanitizeId(k)}`));
             const objs = await this.getAdapterObjectsAsync();
             for (const fullId of Object.keys(objs)) {
                 const id = fullId.startsWith(this.namespace + ".")
                     ? fullId.slice(this.namespace.length + 1)
                     : fullId;
                 if (id.startsWith("CO@.")) {
-                    if (!validIds.has(id)) {
+                    const base = id.split(".").slice(0, 2).join(".");
+                    if (!validBaseIds.has(base)) {
                         const msg = `Deleting stale endpoint state ${id}`;
                         this.log.info(msg);
                         this.notifyAdmin(msg);
@@ -394,13 +411,11 @@ class GiraEndpointAdapter extends utils.Adapter {
                         await this.delObjectAsync(id, { recursive: true });
                     }
                 }
-                else if (id.startsWith("info.subscriptions.")) {
-                    if (!validSubIds.has(id)) {
-                        const msg = `Deleting stale subscription state ${id}`;
-                        this.log.info(msg);
-                        this.notifyAdmin(msg);
-                        await this.delObjectAsync(id, { recursive: true });
-                    }
+                else if (id.startsWith("info.subscriptions")) {
+                    const msg = `Deleting legacy subscription state ${id}`;
+                    this.log.info(msg);
+                    this.notifyAdmin(msg);
+                    await this.delObjectAsync(id, { recursive: true });
                 }
                 else if (id.startsWith("objekte.")) {
                     const msg = `Deleting legacy object ${id}`;
@@ -455,7 +470,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.client.on("close", (info) => {
                 this.log.warn(`Connection closed (${info?.code || "?"}) ${info?.reason || ""}`);
                 this.setState("info.connection", false, true);
-                this.getStatesAsync("info.subscriptions.*").then((states) => {
+                this.getStatesAsync("CO@.*.subscription").then((states) => {
                     for (const id of Object.keys(states)) {
                         this.setState(id, { val: false, ack: true });
                     }
@@ -491,11 +506,19 @@ class GiraEndpointAdapter extends utils.Adapter {
                         if (key === undefined)
                             continue;
                         const normalized = this.normalizeKey(key);
-                        const subId = `info.subscriptions.${this.sanitizeId(normalized)}`;
+                        const baseId = this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
+                        this.keyIdMap.set(normalized, baseId);
+                        this.idKeyMap.set(baseId, normalized);
+                        await this.extendObjectAsync(baseId, {
+                            type: "channel",
+                            common: { name: this.keyDescMap.get(normalized) || normalized },
+                            native: {},
+                        });
+                        const subId = `${baseId}.subscription`;
                         await this.extendObjectAsync(subId, {
                             type: "state",
                             common: {
-                                name: normalized,
+                                name: "subscription",
                                 type: "boolean",
                                 role: "indicator",
                                 read: true,
@@ -525,11 +548,19 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const normalized = this.normalizeKey(key);
                         received.add(normalized);
                         const success = item.code !== undefined ? item.code === 0 : !("error" in item);
-                        const subId = `info.subscriptions.${this.sanitizeId(normalized)}`;
+                        const baseId = this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
+                        this.keyIdMap.set(normalized, baseId);
+                        this.idKeyMap.set(baseId, normalized);
+                        await this.extendObjectAsync(baseId, {
+                            type: "channel",
+                            common: { name: this.keyDescMap.get(normalized) || normalized },
+                            native: {},
+                        });
+                        const subId = `${baseId}.subscription`;
                         await this.extendObjectAsync(subId, {
                             type: "state",
                             common: {
-                                name: normalized,
+                                name: "subscription",
                                 type: "boolean",
                                 role: "indicator",
                                 read: true,
@@ -543,17 +574,25 @@ class GiraEndpointAdapter extends utils.Adapter {
                             this.log.warn(msg);
                             this.notifyAdmin(msg);
                         }
-                        const value = item.data?.value !== undefined ? item.data.value : item.data ?? item.value;
-                        entries.push({ key, value });
+                        const value = item.data ?? { value: item.value };
+                        entries.push({ key, data: value });
                     }
                     const pending = Array.from(this.pendingSubscriptions);
                     for (const key of pending) {
                         if (!received.has(key)) {
-                            const subId = `info.subscriptions.${this.sanitizeId(key)}`;
+                            const baseId = this.keyIdMap.get(key) ?? `CO@.${this.sanitizeId(key)}`;
+                            this.keyIdMap.set(key, baseId);
+                            this.idKeyMap.set(baseId, key);
+                            await this.extendObjectAsync(baseId, {
+                                type: "channel",
+                                common: { name: this.keyDescMap.get(key) || key },
+                                native: {},
+                            });
+                            const subId = `${baseId}.subscription`;
                             await this.extendObjectAsync(subId, {
                                 type: "state",
                                 common: {
-                                    name: key,
+                                    name: "subscription",
                                     type: "boolean",
                                     role: "indicator",
                                     read: true,
@@ -572,7 +611,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     // Case 2: push event with subscription key
                 }
                 else if (payload?.subscription?.key && typeof data === "object" && "value" in data) {
-                    entries.push({ key: String(payload.subscription.key), value: data.value });
+                    entries.push({ key: String(payload.subscription.key), data });
                     // Case 3: array of events
                 }
                 else if (Array.isArray(data)) {
@@ -582,24 +621,24 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const key = item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
                         if (key === undefined)
                             continue;
-                        entries.push({ key, value: item.value });
+                        entries.push({ key, data: item });
                     }
                     // Case 4: object containing key/uid or generic key-value pairs
                 }
                 else if (typeof data === "object") {
                     if (data.uid !== undefined || data.key !== undefined) {
                         const key = data.uid !== undefined ? String(data.uid) : String(data.key);
-                        const value = data.data?.value !== undefined ? data.data.value : data.value;
-                        entries.push({ key, value });
+                        const value = data.data ?? { value: data.value };
+                        entries.push({ key, data: value });
                     }
                     else {
                         for (const [key, val] of Object.entries(data)) {
-                            const value = val?.value !== undefined ? val.value : val;
-                            entries.push({ key, value });
+                            const obj = typeof val === "object" && val !== null ? val : { value: val };
+                            entries.push({ key, data: obj });
                         }
                     }
                 }
-                for (const { key, value: val } of entries) {
+                for (const { key, data } of entries) {
                     const normalized = this.normalizeKey(key);
                     if (this.skipInitialUpdate.has(normalized)) {
                         this.log.debug(`Skipping initial update for ${normalized}`);
@@ -607,7 +646,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                         continue;
                     }
                     const boolKey = this.boolKeys.has(normalized);
-                    const decoded = decodeAckValue(val, boolKey);
+                    const rawVal = data.value;
+                    const decoded = decodeAckValue(rawVal, boolKey);
                     const value = decoded.value;
                     const type = decoded.type;
                     const pending = this.pendingUpdates.get(normalized);
@@ -618,28 +658,62 @@ class GiraEndpointAdapter extends utils.Adapter {
                         continue;
                     }
                     this.pendingUpdates.delete(normalized);
-                    const id = this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
-                    this.keyIdMap.set(normalized, id);
+                    const baseId = this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
+                    this.keyIdMap.set(normalized, baseId);
+                    this.idKeyMap.set(baseId, normalized);
                     const name = this.keyDescMap.get(normalized) || normalized;
                     this.keyDescMap.set(normalized, name);
-                    await this.extendObjectAsync(id, {
-                        type: "state",
-                        common: { name, type, role: "state", read: true, write: true },
+                    await this.extendObjectAsync(baseId, {
+                        type: "channel",
+                        common: { name },
                         native: {},
                     });
-                    this.subscribeStates(id);
-                    this.log.debug(`Updating state ${id} -> ${JSON.stringify(value)}`);
-                    await this.setStateAsync(id, { val: value, ack: true });
-                    const mappedForeign = this.reverseMap.get(normalized);
-                    if (mappedForeign) {
-                        let mappedVal = decodeAckValue(value, mappedForeign.bool).value;
-                        this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
-                        this.suppressStateChange.add(mappedForeign.stateId);
-                        await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
-                        const timer = this.setTimeout(() => {
-                            this.suppressStateChange.delete(mappedForeign.stateId);
-                            this.clearTimeout(timer);
-                        }, 1000);
+                    for (const [prop, raw] of Object.entries(data)) {
+                        const isValue = prop === "value";
+                        let val = raw;
+                        let stateType;
+                        let role = "state";
+                        if (isValue) {
+                            val = value;
+                            stateType = type;
+                        }
+                        else if (typeof raw === "object") {
+                            val = JSON.stringify(raw);
+                            stateType = "string";
+                            role = "json";
+                        }
+                        else if (typeof raw === "boolean") {
+                            stateType = "boolean";
+                        }
+                        else if (typeof raw === "number") {
+                            stateType = "number";
+                        }
+                        else {
+                            stateType = "string";
+                        }
+                        const propId = `${baseId}.${this.sanitizeProp(prop)}`;
+                        await this.extendObjectAsync(propId, {
+                            type: "state",
+                            common: { name: prop, type: stateType, role, read: true, write: isValue },
+                            native: {},
+                        });
+                        if (isValue)
+                            this.subscribeStates(propId);
+                        this.log.debug(`Updating state ${propId} -> ${JSON.stringify(val)}`);
+                        await this.setStateAsync(propId, { val, ack: true });
+                        if (isValue) {
+                            const mappedForeign = this.reverseMap.get(normalized);
+                            if (mappedForeign) {
+                                let mappedVal = decodeAckValue(val, mappedForeign.bool).value;
+                                this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
+                                this.suppressStateChange.add(mappedForeign.stateId);
+                                await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
+                                const timer = this.setTimeout(() => {
+                                    this.suppressStateChange.delete(mappedForeign.stateId);
+                                    this.clearTimeout(timer);
+                                }, 1000);
+                            }
+                        }
                     }
                 }
             });
@@ -663,6 +737,9 @@ class GiraEndpointAdapter extends utils.Adapter {
     sanitizeArchiveId(s) {
         return s.replace(/^DA@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
     }
+    sanitizeProp(s) {
+        return s.replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
+    }
     async onUnload(callback) {
         try {
             this.log.info("Shutting down...");
@@ -670,7 +747,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (this.client) {
                 try {
                     this.client.unsubscribe(this.endpointKeys);
-                    const states = await this.getStatesAsync("info.subscriptions.*");
+                    const states = await this.getStatesAsync("CO@.*.subscription");
                     for (const id of Object.keys(states)) {
                         await this.setStateAsync(id, { val: false, ack: true });
                     }
@@ -699,9 +776,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             }
             const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool);
             this.client.call(mapped.key, method, uidValue);
-            const mappedId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
-            this.keyIdMap.set(mapped.key, mappedId);
-            this.setState(mappedId, { val: ackVal, ack: true });
+            const baseId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
+            this.keyIdMap.set(mapped.key, baseId);
+            this.idKeyMap.set(baseId, mapped.key);
+            this.setState(`${baseId}.value`, { val: ackVal, ack: true });
             if (!state.ack) {
                 this.suppressStateChange.add(id);
                 this.setForeignState(id, { val: state.val, ack: true });
@@ -769,14 +847,17 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
         if (state.ack)
             return;
-        const key = id.split(".").pop();
-        if (!key)
+        if (!id.startsWith("CO@."))
             return;
-        const boolKey = this.boolKeys.has(this.normalizeKey(key));
+        const parts = id.split(".");
+        if (parts[parts.length - 1] !== "value")
+            return;
+        const baseId = parts.slice(0, parts.length - 1).join(".");
+        const key = this.idKeyMap.get(baseId) ?? this.normalizeKey(parts[1]);
+        const boolKey = this.boolKeys.has(key);
         const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey);
-        const normKey = this.normalizeKey(key);
-        this.client.call(normKey, method, uidValue);
-        const mappedForeign = this.reverseMap.get(normKey);
+        this.client.call(key, method, uidValue);
+        const mappedForeign = this.reverseMap.get(key);
         if (mappedForeign) {
             let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
             this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
@@ -787,9 +868,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.clearTimeout(timer);
             }, 1000);
         }
-        this.pendingUpdates.set(normKey, ackVal);
+        this.pendingUpdates.set(key, ackVal);
         const timer = this.setTimeout(() => {
-            this.pendingUpdates.delete(normKey);
+            this.pendingUpdates.delete(key);
             this.clearTimeout(timer);
         }, 1000);
         this.setState(id, { val: ackVal, ack: true });
