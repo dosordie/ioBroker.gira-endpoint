@@ -15,7 +15,7 @@ class GiraClient extends events_1.EventEmitter {
         super();
         this.closedByUser = false;
         this.awaitingPong = false;
-        this.contextResolvers = new Map();
+        this.tagResolvers = new Map();
         // Defaults + Merge ohne doppelte Literal-Keys (TS2783 vermeiden)
         const defaults = {
             host: "",
@@ -92,26 +92,26 @@ class GiraClient extends events_1.EventEmitter {
                     const msg = payload.message ||
                         payload.error ||
                         `Error code ${payload.code}`;
-                    const ctx = payload.context;
-                    if (ctx && this.contextResolvers.has(ctx)) {
-                        const resolver = this.contextResolvers.get(ctx);
+                    const tag = payload.tag;
+                    if (tag && this.tagResolvers.has(tag)) {
+                        const resolver = this.tagResolvers.get(tag);
                         if (resolver?.timer)
                             clearTimeout(resolver.timer);
                         resolver?.reject(new Error(msg));
-                        this.contextResolvers.delete(ctx);
+                        this.tagResolvers.delete(tag);
                     }
                     this.emit("error", new Error(msg));
                     return;
                 }
                 this.normalizeData(payload?.data);
                 this.emit("event", payload);
-                const ctx = payload?.context;
-                if (ctx && this.contextResolvers.has(ctx)) {
-                    const resolver = this.contextResolvers.get(ctx);
+                const tag = payload?.tag;
+                if (tag && this.tagResolvers.has(tag)) {
+                    const resolver = this.tagResolvers.get(tag);
                     if (resolver?.timer)
                         clearTimeout(resolver.timer);
                     resolver?.resolve(payload);
-                    this.contextResolvers.delete(ctx);
+                    this.tagResolvers.delete(tag);
                 }
             }
             catch (err) {
@@ -135,7 +135,7 @@ class GiraClient extends events_1.EventEmitter {
             this.ws.send(data);
         }
     }
-    call(key, method, params, context, timeoutMs = 10000) {
+    call(key, method, params, tag, timeoutMs = 10000) {
         const param = { key, method };
         if (params !== undefined) {
             if (params && typeof params === "object" && !Array.isArray(params)) {
@@ -146,29 +146,29 @@ class GiraClient extends events_1.EventEmitter {
             }
         }
         const msg = { type: "call", param };
-        if (context) {
-            msg.context = context;
+        if (tag) {
+            msg.tag = tag;
             return new Promise((resolve, reject) => {
                 const timer = setTimeout(() => {
                     reject(new Error("Timeout"));
-                    this.contextResolvers.delete(context);
+                    this.tagResolvers.delete(tag);
                 }, timeoutMs);
-                this.contextResolvers.set(context, { resolve, reject, timer });
+                this.tagResolvers.set(tag, { resolve, reject, timer });
                 this.send(msg);
             });
         }
         this.send(msg);
     }
-    select(filter, context, timeoutMs = 10000) {
+    select(filter, tag, timeoutMs = 10000) {
         const msg = { type: "select", param: filter };
-        if (context) {
-            msg.context = context;
+        if (tag) {
+            msg.tag = tag;
             return new Promise((resolve, reject) => {
                 const timer = setTimeout(() => {
                     reject(new Error("Timeout"));
-                    this.contextResolvers.delete(context);
+                    this.tagResolvers.delete(tag);
                 }, timeoutMs);
-                this.contextResolvers.set(context, { resolve, reject, timer });
+                this.tagResolvers.set(tag, { resolve, reject, timer });
                 this.send(msg);
             });
         }
@@ -205,10 +205,6 @@ class GiraClient extends events_1.EventEmitter {
                 }
             }
         }
-        if (v === 1 || v === "1")
-            v = true;
-        else if (v === 0 || v === "0")
-            v = false;
         return v;
     }
     normalizeData(obj) {
