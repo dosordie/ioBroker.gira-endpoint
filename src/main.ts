@@ -781,6 +781,12 @@ class GiraEndpointAdapter extends utils.Adapter {
   private onStateChange(id: string, state: ioBroker.State | null | undefined): void {
     if (!state || !this.client) return;
 
+    // In case we receive a fully qualified id (e.g. from setForeignState),
+    // strip the adapter namespace so further processing works as expected.
+    if (id.startsWith(this.namespace + ".")) {
+      id = id.substring(this.namespace.length + 1);
+    }
+
     const mapped = this.forwardMap.get(id);
     if (mapped) {
       if (this.suppressStateChange.has(id)) {
