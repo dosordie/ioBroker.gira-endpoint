@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "news": {
+      "0.2.3": {
+        "en": "Align CO@ endpoint structure with DA@ and move subscription status into each endpoint",
+        "de": "CO@ Ordnerstruktur an DA@ angeglichen und Abo-Status in den jeweiligen Endpunkt verschoben"
+      },
       "0.2.2": {
         "en": "Fix sending adapter states without prefix to HomeServer, Allow disabling initial update per endpoint on adapter start, Add Warning - Subscription failed for CO@..., Also ad info.subscriptions",
         "de": "Adapter-eigene States wurden ohne Prefix an den HomeServer gesendet, Initiale Aktualisierung pro Endpunkt beim Start deaktivierbar, Warnung hinzugefügt wenn ein CO@ nicht Abonniert weden kann. Den Abo Status sieht man auch unter info.subscriptions"

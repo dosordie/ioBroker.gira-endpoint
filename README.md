@@ -81,6 +81,9 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 
 ## Changelog
 
+### 0.2.3
+* Align CO@ endpoint folder structure with DA@ and move subscription status into each endpoint
+
 ### 0.2.2
 * Fix sending adapter states without "CO@" prefix to the HomeServer
 * Warning - Subscription failed for CO@..., Also ad info.subscriptions
