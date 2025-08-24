@@ -101,6 +101,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private client?: GiraClient;
   private endpointKeys: string[] = [];
   private keyIdMap = new Map<string, string>();
+  private idKeyMap = new Map<string, string>();
   private keyDescMap = new Map<string, string>();
   private forwardMap = new Map<string, { key: string; bool: boolean }>();
   private reverseMap = new Map<string, { stateId: string; bool: boolean }>();
@@ -274,6 +275,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       for (const key of new Set(this.endpointKeys)) {
         const id = `CO@.${this.sanitizeId(key)}`;
         this.keyIdMap.set(key, id);
+        this.idKeyMap.set(id, key);
         const name = this.keyDescMap.get(key) || key;
         await this.setObjectNotExistsAsync(id, {
           type: "state",
@@ -544,6 +546,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           const id =
             this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
           this.keyIdMap.set(normalized, id);
+          this.idKeyMap.set(id, normalized);
           const name = this.keyDescMap.get(normalized) || normalized;
           this.keyDescMap.set(normalized, name);
           await this.extendObjectAsync(id, {
@@ -622,6 +625,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.client.call(mapped.key, method, uidValue);
       const mappedId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
       this.keyIdMap.set(mapped.key, mappedId);
+      this.idKeyMap.set(mappedId, mapped.key);
       this.setState(mappedId, { val: ackVal, ack: true });
       if (!state.ack) {
         this.suppressStateChange.add(id);
@@ -640,13 +644,17 @@ class GiraEndpointAdapter extends utils.Adapter {
     }
 
     if (state.ack) return;
-    const key = id.split(".").pop();
-    if (!key) return;
-    const boolKey = this.boolKeys.has(this.normalizeKey(key));
+    const relId = id.startsWith(this.namespace + ".")
+      ? id.slice(this.namespace.length + 1)
+      : id;
+    const origKey = this.idKeyMap.get(relId);
+    const keyPart = relId.split(".").pop();
+    if (!origKey && !keyPart) return;
+    const sendKey = origKey ?? this.normalizeKey(keyPart!);
+    const boolKey = this.boolKeys.has(sendKey);
     const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey);
-    const normKey = this.normalizeKey(key);
-    this.client.call(normKey, method, uidValue);
-    const mappedForeign = this.reverseMap.get(normKey);
+    this.client.call(sendKey, method, uidValue);
+    const mappedForeign = this.reverseMap.get(sendKey);
     if (mappedForeign) {
       let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
       this.log.debug(
@@ -659,9 +667,9 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.clearTimeout(timer);
       }, 1000);
     }
-    this.pendingUpdates.set(normKey, ackVal);
+    this.pendingUpdates.set(sendKey, ackVal);
     const timer = this.setTimeout(() => {
-      this.pendingUpdates.delete(normKey);
+      this.pendingUpdates.delete(sendKey);
       this.clearTimeout(timer);
     }, 1000);
     this.setState(id, { val: ackVal, ack: true });
