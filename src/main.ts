@@ -118,6 +118,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveKeyIdMap = new Map<string, string>();
   private archiveIdKeyMap = new Map<string, string>();
   private archiveDescMap = new Map<string, string>();
+  private fetchedMeta = new Set<string>();
 
   private notifyAdmin(message: string): void {
     this.sendTo("admin", "messageBox", {
@@ -354,6 +355,8 @@ class GiraEndpointAdapter extends utils.Adapter {
         });
         this.log.debug(`Pre-created endpoint channel ${baseId}`);
         this.subscribeStates(`${baseId}.value`);
+        this.subscribeStates(`${baseId}.meta`);
+        this.subscribeStates(`${baseId}.status`);
       }
 
       for (const key of new Set(this.archiveKeys)) {
@@ -459,6 +462,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.client.on("open", () => {
         this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);
         this.setState("info.connection", true, true);
+        this.fetchedMeta.clear();
         if (this.endpointKeys.length) {
           this.pendingSubscriptions = new Set(
             this.endpointKeys.map((k) => this.normalizeKey(k))
@@ -680,6 +684,11 @@ class GiraEndpointAdapter extends utils.Adapter {
             native: {},
           });
 
+          if (!this.fetchedMeta.has(normalized)) {
+            this.fetchedMeta.add(normalized);
+            this.fetchMetaStatus(normalized, baseId);
+          }
+
           for (const [prop, raw] of Object.entries(data)) {
             const isValue = prop === "value";
             let val: any = raw;
@@ -753,6 +762,34 @@ class GiraEndpointAdapter extends utils.Adapter {
 
   private sanitizeProp(s: string): string {
     return s.replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
+  }
+
+  private fetchMetaStatus(key: string, baseId: string): void {
+    if (!this.client) return;
+    const metaProm = this.client.call(key, "meta", undefined, `meta_${Date.now()}`);
+    if (metaProm) {
+      metaProm
+        .then((resp: any) => {
+          this.setState(`${baseId}.meta`, { val: JSON.stringify(resp.data), ack: true });
+        })
+        .catch((err: any) => {
+          this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
+        });
+    }
+    const statusProm = this.client.call(key, "status", undefined, `status_${Date.now()}`);
+    if (statusProm) {
+      statusProm
+        .then((resp: any) => {
+          let val: any = resp.data;
+          if (typeof val === "object") {
+            val = JSON.stringify(val);
+          }
+          this.setState(`${baseId}.status`, { val, ack: true });
+        })
+        .catch((err: any) => {
+          this.log.error(`Status call failed for ${key}: ${err?.message || err}`);
+        });
+    }
   }
 
   private async onUnload(callback: () => void): Promise<void> {
@@ -858,6 +895,47 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
       }
       return;
+    }
+
+    if (id.startsWith("CO@.")) {
+      const parts = id.split(".");
+      const action = parts.pop();
+      if (action === "meta" || action === "status") {
+        if (state.ack) return;
+        const baseId = parts.join(".");
+        const key =
+          this.idKeyMap.get(baseId) ??
+          this.normalizeKey(parts.slice(1).join("."));
+        if (!key) return;
+        if (action === "meta") {
+          const prom = this.client.call(key, "meta", undefined, `meta_${Date.now()}`);
+          if (prom) {
+            prom
+              .then((resp: any) => {
+                this.setState(id, { val: JSON.stringify(resp.data), ack: true });
+              })
+              .catch((err: any) => {
+                this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
+              });
+          }
+        } else if (action === "status") {
+          const prom = this.client.call(key, "status", undefined, `status_${Date.now()}`);
+          if (prom) {
+            prom
+              .then((resp: any) => {
+                let val: any = resp.data;
+                if (typeof val === "object") {
+                  val = JSON.stringify(val);
+                }
+                this.setState(id, { val, ack: true });
+              })
+              .catch((err: any) => {
+                this.log.error(`Status call failed for ${key}: ${err?.message || err}`);
+              });
+          }
+        }
+        return;
+      }
     }
 
     if (state.ack) return;
