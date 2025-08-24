@@ -269,8 +269,6 @@ export class GiraClient extends EventEmitter {
         }
       }
     }
-    if (v === 1 || v === "1") v = true;
-    else if (v === 0 || v === "0") v = false;
     return v;
   }
 
