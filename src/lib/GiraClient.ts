@@ -52,7 +52,11 @@ export class GiraClient extends EventEmitter {
   private awaitingPong = false;
   private contextResolvers = new Map<
     string,
-    { resolve: (value: any) => void; reject: (reason?: any) => void }
+    {
+      resolve: (value: any) => void;
+      reject: (reason?: any) => void;
+      timer?: NodeJS.Timeout;
+    }
   >();
 
   constructor(opts: GiraClientOptions) {
@@ -143,7 +147,9 @@ export class GiraClient extends EventEmitter {
             `Error code ${payload.code}`;
           const ctx = (payload as any).context;
           if (ctx && this.contextResolvers.has(ctx)) {
-            this.contextResolvers.get(ctx)?.reject(new Error(msg));
+            const resolver = this.contextResolvers.get(ctx);
+            if (resolver?.timer) clearTimeout(resolver.timer as any);
+            resolver?.reject(new Error(msg));
             this.contextResolvers.delete(ctx);
           }
           this.emit("error", new Error(msg));
@@ -153,7 +159,9 @@ export class GiraClient extends EventEmitter {
         this.emit("event", payload);
         const ctx = payload?.context;
         if (ctx && this.contextResolvers.has(ctx)) {
-          this.contextResolvers.get(ctx)?.resolve(payload);
+          const resolver = this.contextResolvers.get(ctx);
+          if (resolver?.timer) clearTimeout(resolver.timer as any);
+          resolver?.resolve(payload);
           this.contextResolvers.delete(ctx);
         }
       } catch (err) {
@@ -184,7 +192,8 @@ export class GiraClient extends EventEmitter {
     key: string,
     method: string,
     params?: any,
-    context?: string
+    context?: string,
+    timeoutMs = 10000
   ): Promise<any> | void {
     const param: any = { key, method };
     if (params !== undefined) {
@@ -198,19 +207,31 @@ export class GiraClient extends EventEmitter {
     if (context) {
       msg.context = context;
       return new Promise((resolve, reject) => {
-        this.contextResolvers.set(context, { resolve, reject });
+        const timer = setTimeout(() => {
+          reject(new Error("Timeout"));
+          this.contextResolvers.delete(context);
+        }, timeoutMs);
+        this.contextResolvers.set(context, { resolve, reject, timer });
         this.send(msg);
       });
     }
     this.send(msg);
   }
 
-  public select(filter: object, context?: string): Promise<any> | void {
+  public select(
+    filter: object,
+    context?: string,
+    timeoutMs = 10000
+  ): Promise<any> | void {
     const msg: any = { type: "select", param: filter };
     if (context) {
       msg.context = context;
       return new Promise((resolve, reject) => {
-        this.contextResolvers.set(context, { resolve, reject });
+        const timer = setTimeout(() => {
+          reject(new Error("Timeout"));
+          this.contextResolvers.delete(context);
+        }, timeoutMs);
+        this.contextResolvers.set(context, { resolve, reject, timer });
         this.send(msg);
       });
     }
