@@ -229,6 +229,41 @@
           ]
         }
       }
+    },
+    "archivesTab": {
+      "type": "panel",
+      "label": "Datenarchive",
+      "items": {
+        "archivesHeader": {
+          "type": "header",
+          "text": "Liste der Homeserver Datenarchiv IDs die abgerufen werden",
+          "size": 2
+        },
+        "dataArchives": {
+          "type": "table",
+          "label": "Hier die Datenarchiv IDs ohne das DA@ eintragen",
+          "style": {
+            "fontSize": "0.8rem"
+          },
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12,
+          "items": [
+            {
+              "type": "text",
+              "attr": "key",
+              "label": "DA@"
+            },
+            {
+              "type": "text",
+              "attr": "name",
+              "label": "Beschreibung"
+            }
+          ]
+        }
+      }
     }
   }
 }

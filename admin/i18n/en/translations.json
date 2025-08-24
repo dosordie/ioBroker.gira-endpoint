@@ -26,5 +26,9 @@
   "Hier die Endpunkt IDs und ioBroker Objekte eintragen": "Enter endpoint IDs and ioBroker objects here",
   "State ID": "State ID",
   "ioBroker → Endpunkt": "ioBroker → Endpoint",
-  "Endpunkt → ioBroker": "Endpoint → ioBroker"
+  "Endpunkt → ioBroker": "Endpoint → ioBroker",
+  "Datenarchive": "Data archives",
+  "Liste der Homeserver Datenarchiv IDs die abgerufen werden": "List of home server data archive IDs to fetch",
+  "Hier die Datenarchiv IDs ohne das DA@ eintragen": "Enter data archive IDs without the DA@",
+  "DA@": "DA@"
 }
