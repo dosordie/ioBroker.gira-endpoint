@@ -538,6 +538,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                             native: {},
                         });
                         await this.setStateAsync(subId, { val: false, ack: true });
+                        const statusText = (0, GiraClient_1.codeToMessage)(item.code ?? payload.code ?? 0);
+                        await this.setStateAsync(`${baseId}.status`, { val: statusText, ack: true });
                         if (item.code !== undefined && item.code !== 0) {
                             const msg = `Unsubscribe failed for ${normalized} (${item.code})`;
                             this.log.warn(msg);
@@ -586,7 +588,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                             this.notifyAdmin(msg);
                         }
                         const value = item.data ?? { value: item.value };
-                        entries.push({ key, data: value });
+                        entries.push({ key, data: value, code: item.code });
                     }
                     const pending = Array.from(this.pendingSubscriptions);
                     for (const key of pending) {
@@ -622,7 +624,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     // Case 2: push event with subscription key
                 }
                 else if (payload?.subscription?.key && typeof data === "object" && "value" in data) {
-                    entries.push({ key: String(payload.subscription.key), data });
+                    entries.push({ key: String(payload.subscription.key), data, code: payload.code });
                     // Case 3: array of events
                 }
                 else if (Array.isArray(data)) {
@@ -632,7 +634,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const key = item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
                         if (key === undefined)
                             continue;
-                        entries.push({ key, data: item });
+                        entries.push({ key, data: item, code: item.code });
                     }
                     // Case 4: object containing key/uid or generic key-value pairs
                 }
@@ -640,7 +642,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     if (data.uid !== undefined || data.key !== undefined) {
                         const key = data.uid !== undefined ? String(data.uid) : String(data.key);
                         const value = data.data ?? { value: data.value };
-                        entries.push({ key, data: value });
+                        entries.push({ key, data: value, code: data.code });
                     }
                     else {
                         for (const [key, val] of Object.entries(data)) {
@@ -649,11 +651,11 @@ class GiraEndpointAdapter extends utils.Adapter {
                                 continue;
                             }
                             const obj = typeof val === "object" && val !== null ? val : { value: val };
-                            entries.push({ key, data: obj });
+                            entries.push({ key, data: obj, code: val?.code });
                         }
                     }
                 }
-                for (const { key, data } of entries) {
+                for (const { key, data, code } of entries) {
                     const normalized = this.normalizeKey(key);
                     if (this.skipInitialUpdate.has(normalized)) {
                         this.log.debug(`Skipping initial update for ${normalized}`);
@@ -714,6 +716,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                         this.fetchedMeta.add(normalized);
                         this.fetchMetaStatus(normalized, baseId);
                     }
+                    const statusText = (0, GiraClient_1.codeToMessage)(code ?? payload.code ?? 0);
+                    await this.setStateAsync(`${baseId}.status`, { val: statusText, ack: true });
                     for (const [prop, raw] of Object.entries(data)) {
                         const isValue = prop === "value";
                         let val = raw;
@@ -825,15 +829,15 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
         try {
             const statusResp = await this.client.call(key, "status", undefined, this.makeTag("status"));
-            if (statusResp?.data !== undefined) {
-                let val = statusResp.data;
-                if (typeof val === "object") {
-                    val = JSON.stringify(val);
-                }
-                await this.setStateAsync(`${baseId}.status`, { val, ack: true });
-            }
+            const text = (0, GiraClient_1.codeToMessage)(statusResp?.code ?? 0);
+            await this.setStateAsync(`${baseId}.status`, { val: text, ack: true });
         }
         catch (err) {
+            const code = typeof err?.code === "number" ? err.code : undefined;
+            if (code !== undefined) {
+                const text = (0, GiraClient_1.codeToMessage)(code);
+                await this.setStateAsync(`${baseId}.status`, { val: text, ack: true });
+            }
             this.log.error(`Status call failed for ${key}: ${err?.message || err}`);
         }
     }
@@ -983,13 +987,15 @@ class GiraEndpointAdapter extends utils.Adapter {
                     if (prom) {
                         prom
                             .then((resp) => {
-                            let val = resp.data;
-                            if (typeof val === "object") {
-                                val = JSON.stringify(val);
-                            }
-                            this.setState(id, { val, ack: true });
+                            const text = (0, GiraClient_1.codeToMessage)(resp?.code ?? 0);
+                            this.setState(id, { val: text, ack: true });
                         })
                             .catch((err) => {
+                            const code = typeof err?.code === "number" ? err.code : undefined;
+                            if (code !== undefined) {
+                                const text = (0, GiraClient_1.codeToMessage)(code);
+                                this.setState(id, { val: text, ack: true });
+                            }
                             this.log.error(`Status call failed for ${key}: ${err?.message || err}`);
                         });
                     }

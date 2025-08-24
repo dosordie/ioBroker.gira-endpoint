@@ -4,12 +4,27 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GiraClient = void 0;
+exports.codeToMessage = codeToMessage;
 const events_1 = require("events");
 const ws_1 = __importDefault(require("ws"));
 // Kein Listener-Limit (verhindert MaxListeners-Warnungen global hier)
 events_1.EventEmitter.defaultMaxListeners = 0;
 const BACKOFF_FACTOR = 1.7;
 const BACKOFF_JITTER = 0.2;
+const STATUS_CODE_MESSAGES = {
+    0: "Alles in Ordnung.",
+    400: "Ungültige Anfrage (Forbidden).",
+    403: "Zugriff verweigert (Bad Request).",
+    404: "Das angefragte HS-Objekt existiert in dem aufgerufenen Kontext nicht.",
+    500: "Beim Erzeugen der Antwort ist im Server ein Fehler aufgetreten.",
+    901: "Der angegebene Schlüssel ist ungültig.",
+    902: "reserviert",
+    903: "Die Objekt-Parameter sind ungültig.",
+    904: "Das Objekt ist nicht abonniert.",
+};
+function codeToMessage(code) {
+    return STATUS_CODE_MESSAGES[code] || `Error code ${code}`;
+}
 class GiraClient extends events_1.EventEmitter {
     constructor(opts) {
         super();
@@ -92,13 +107,15 @@ class GiraClient extends events_1.EventEmitter {
                     payload.code !== 0) {
                     const msg = payload.message ||
                         payload.error ||
-                        `Error code ${payload.code}`;
+                        codeToMessage(payload.code);
                     const tag = payload.tag;
+                    const err = new Error(msg);
+                    err.code = payload.code;
                     if (tag && this.tagResolvers.has(tag)) {
                         const resolver = this.tagResolvers.get(tag);
                         if (resolver?.timer)
                             clearTimeout(resolver.timer);
-                        resolver?.reject(new Error(msg));
+                        resolver?.reject(err);
                         this.tagResolvers.delete(tag);
                         if (payload?.request) {
                             const reqKey = this.makeRequestKey(payload.request);
@@ -112,12 +129,12 @@ class GiraClient extends events_1.EventEmitter {
                             const resolver = this.tagResolvers.get(t);
                             if (resolver?.timer)
                                 clearTimeout(resolver.timer);
-                            resolver?.reject(new Error(msg));
+                            resolver?.reject(err);
                             this.tagResolvers.delete(t);
                             this.requestTags.delete(reqKey);
                         }
                     }
-                    this.emit("error", new Error(msg));
+                    this.emit("error", err);
                     return;
                 }
                 this.normalizeData(payload?.data);
