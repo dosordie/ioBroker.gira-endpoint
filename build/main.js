@@ -37,6 +37,7 @@ exports.encodeUidValue = encodeUidValue;
 exports.decodeAckValue = decodeAckValue;
 const utils = __importStar(require("@iobroker/adapter-core"));
 const GiraClient_1 = require("./lib/GiraClient");
+const crypto_1 = require("crypto");
 function encodeUidValue(val, boolMode) {
     let method = "set";
     let uidValue = val;
@@ -785,10 +786,13 @@ class GiraEndpointAdapter extends utils.Adapter {
     sanitizeProp(s) {
         return s.replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
     }
+    makeTag(prefix) {
+        return `${prefix}_${(0, crypto_1.randomUUID)()}`;
+    }
     fetchMetaStatus(key, baseId) {
         if (!this.client)
             return;
-        const metaProm = this.client.call(key, "meta", undefined, `meta_${Date.now()}`);
+        const metaProm = this.client.call(key, "meta", undefined, this.makeTag("meta"));
         if (metaProm) {
             metaProm
                 .then((resp) => {
@@ -798,7 +802,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
             });
         }
-        const statusProm = this.client.call(key, "status", undefined, `status_${Date.now()}`);
+        const statusProm = this.client.call(key, "status", undefined, this.makeTag("status"));
         if (statusProm) {
             statusProm
                 .then((resp) => {
@@ -883,7 +887,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (!key || !action)
                 return;
             if (action === "meta") {
-                const prom = this.client.call(key, "meta", undefined, `meta_${Date.now()}`);
+                const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
                 if (prom) {
                     prom
                         .then((resp) => {
@@ -906,7 +910,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     this.log.warn(`Invalid query parameters for ${id}: ${state.val}`);
                     return;
                 }
-                const prom = this.client.call(key, "get", params, `get_${Date.now()}`);
+                const prom = this.client.call(key, "get", params, this.makeTag("get"));
                 if (prom) {
                     prom
                         .then((resp) => {
@@ -935,7 +939,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 if (!key)
                     return;
                 if (action === "meta") {
-                    const prom = this.client.call(key, "meta", undefined, `meta_${Date.now()}`);
+                    const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
                     if (prom) {
                         prom
                             .then((resp) => {
@@ -947,7 +951,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     }
                 }
                 else if (action === "status") {
-                    const prom = this.client.call(key, "status", undefined, `status_${Date.now()}`);
+                    const prom = this.client.call(key, "status", undefined, this.makeTag("status"));
                     if (prom) {
                         prom
                             .then((resp) => {
