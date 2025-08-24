@@ -33,8 +33,82 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.encodeUidValue = encodeUidValue;
+exports.decodeAckValue = decodeAckValue;
 const utils = __importStar(require("@iobroker/adapter-core"));
 const GiraClient_1 = require("./lib/GiraClient");
+function encodeUidValue(val, boolMode) {
+    let method = "set";
+    let uidValue = val;
+    let ackVal = val;
+    if (boolMode) {
+        if (typeof uidValue === "boolean") {
+            ackVal = uidValue;
+            uidValue = uidValue ? "1" : "0";
+        }
+        else if (typeof uidValue === "number") {
+            ackVal = uidValue !== 0;
+            uidValue = uidValue ? "1" : "0";
+        }
+        else if (typeof uidValue === "string") {
+            if (uidValue === "true" || uidValue === "false") {
+                ackVal = uidValue === "true";
+                uidValue = ackVal ? "1" : "0";
+            }
+            else if (uidValue === "toggle") {
+                uidValue = "1";
+                method = "toggle";
+            }
+            else if (!isNaN(Number(uidValue))) {
+                const num = Number(uidValue);
+                ackVal = num !== 0;
+                uidValue = num ? "1" : "0";
+            }
+            else {
+                ackVal = uidValue;
+                uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+            }
+        }
+    }
+    else {
+        if (typeof uidValue === "boolean") {
+            ackVal = uidValue ? 1 : 0;
+            uidValue = uidValue ? "1" : "0";
+        }
+        else if (typeof uidValue === "string") {
+            if (uidValue === "true" || uidValue === "false") {
+                ackVal = uidValue === "true" ? 1 : 0;
+                uidValue = uidValue === "true" ? "1" : "0";
+            }
+            else if (uidValue === "toggle") {
+                uidValue = "1";
+                method = "toggle";
+            }
+            else if (isNaN(Number(uidValue))) {
+                uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+            }
+        }
+    }
+    return { uidValue: String(uidValue), ackVal, method };
+}
+function decodeAckValue(val, boolMode) {
+    if (boolMode) {
+        if (typeof val === "number")
+            return { value: val !== 0, type: "boolean" };
+        if (typeof val === "string")
+            return { value: val !== "0", type: "boolean" };
+        return { value: Boolean(val), type: "boolean" };
+    }
+    else {
+        if (typeof val === "boolean")
+            return { value: val ? 1 : 0, type: "number" };
+        if (typeof val === "number")
+            return { value: val, type: "number" };
+        if (typeof val === "string")
+            return { value: val, type: "string" };
+        return { value: val, type: "mixed" };
+    }
+}
 class GiraEndpointAdapter extends utils.Adapter {
     notifyAdmin(message) {
         this.sendTo("admin", "messageBox", {
@@ -451,27 +525,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                         continue;
                     }
                     const boolKey = this.boolKeys.has(normalized);
-                    let value = val;
-                    let type = "mixed";
-                    if (boolKey) {
-                        type = "boolean";
-                        if (typeof val === "number")
-                            value = val !== 0;
-                        else if (typeof val === "string")
-                            value = val !== "0";
-                        else
-                            value = Boolean(val);
-                    }
-                    else {
-                        if (typeof val === "boolean") {
-                            type = "number";
-                            value = val ? 1 : 0;
-                        }
-                        else if (typeof val === "number")
-                            type = "number";
-                        else if (typeof val === "string")
-                            type = "string";
-                    }
+                    const decoded = decodeAckValue(val, boolKey);
+                    const value = decoded.value;
+                    const type = decoded.type;
                     const pending = this.pendingUpdates.get(normalized);
                     if (pending !== undefined &&
                         (pending === value || pending == value)) {
@@ -494,13 +550,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     await this.setStateAsync(id, { val: value, ack: true });
                     const mappedForeign = this.reverseMap.get(normalized);
                     if (mappedForeign) {
-                        let mappedVal = value;
-                        if (mappedForeign.bool) {
-                            if (typeof mappedVal === "number")
-                                mappedVal = mappedVal !== 0;
-                            else if (typeof mappedVal === "string")
-                                mappedVal = mappedVal !== "0";
-                        }
+                        let mappedVal = decodeAckValue(value, mappedForeign.bool).value;
                         this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
                         this.suppressStateChange.add(mappedForeign.stateId);
                         await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
@@ -558,49 +608,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.log.debug(`Ignoring state change for ${id} because it was just updated from endpoint`);
                 return;
             }
-            let uidValue = state.val;
-            let ackVal = state.val;
-            if (mapped.bool) {
-                if (typeof uidValue === "boolean") {
-                    ackVal = uidValue;
-                    uidValue = uidValue ? "1" : "0";
-                }
-                else if (typeof uidValue === "number") {
-                    ackVal = uidValue !== 0;
-                    uidValue = uidValue ? "1" : "0";
-                }
-                else if (typeof uidValue === "string") {
-                    if (uidValue === "true" || uidValue === "false") {
-                        ackVal = uidValue === "true";
-                        uidValue = ackVal ? "1" : "0";
-                    }
-                    else if (!isNaN(Number(uidValue))) {
-                        const num = Number(uidValue);
-                        ackVal = num !== 0;
-                        uidValue = num ? "1" : "0";
-                    }
-                    else {
-                        ackVal = uidValue;
-                        uidValue = Buffer.from(uidValue, "utf8").toString("base64");
-                    }
-                }
-            }
-            else {
-                if (typeof uidValue === "boolean") {
-                    ackVal = uidValue ? 1 : 0;
-                    uidValue = uidValue ? "1" : "0";
-                }
-                else if (typeof uidValue === "string") {
-                    if (uidValue === "true" || uidValue === "false") {
-                        ackVal = uidValue === "true" ? 1 : 0;
-                        uidValue = uidValue === "true" ? "1" : "0";
-                    }
-                    else if (isNaN(Number(uidValue))) {
-                        uidValue = Buffer.from(uidValue, "utf8").toString("base64");
-                    }
-                }
-            }
-            this.client.call(mapped.key, "set", uidValue);
+            const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool);
+            this.client.call(mapped.key, method, uidValue);
             const mappedId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
             this.keyIdMap.set(mapped.key, mappedId);
             this.setState(mappedId, { val: ackVal, ack: true });
@@ -624,69 +633,13 @@ class GiraEndpointAdapter extends utils.Adapter {
         const key = id.split(".").pop();
         if (!key)
             return;
-        let uidValue = state.val;
-        let method = "set";
-        let ackVal = state.val;
         const boolKey = this.boolKeys.has(this.normalizeKey(key));
-        if (boolKey) {
-            if (typeof uidValue === "boolean") {
-                ackVal = uidValue;
-                uidValue = uidValue ? "1" : "0";
-            }
-            else if (typeof uidValue === "number") {
-                ackVal = uidValue !== 0;
-                uidValue = uidValue ? "1" : "0";
-            }
-            else if (typeof uidValue === "string") {
-                if (uidValue === "true" || uidValue === "false") {
-                    ackVal = uidValue === "true";
-                    uidValue = ackVal ? "1" : "0";
-                }
-                else if (uidValue === "toggle") {
-                    uidValue = "1";
-                    method = "toggle";
-                }
-                else if (!isNaN(Number(uidValue))) {
-                    const num = Number(uidValue);
-                    ackVal = num !== 0;
-                    uidValue = num ? "1" : "0";
-                }
-                else {
-                    ackVal = uidValue;
-                    uidValue = Buffer.from(uidValue, "utf8").toString("base64");
-                }
-            }
-        }
-        else {
-            if (typeof uidValue === "boolean") {
-                ackVal = uidValue ? 1 : 0;
-                uidValue = uidValue ? "1" : "0";
-            }
-            else if (typeof uidValue === "string") {
-                if (uidValue === "true" || uidValue === "false") {
-                    ackVal = uidValue === "true" ? 1 : 0;
-                    uidValue = uidValue === "true" ? "1" : "0";
-                }
-                else if (uidValue === "toggle") {
-                    uidValue = "1";
-                    method = "toggle";
-                }
-                else if (isNaN(Number(uidValue))) {
-                    uidValue = Buffer.from(uidValue, "utf8").toString("base64");
-                }
-            }
-        }
+        const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey);
         const normKey = this.normalizeKey(key);
         this.client.call(normKey, method, uidValue);
         const mappedForeign = this.reverseMap.get(normKey);
         if (mappedForeign) {
-            let mappedVal = ackVal;
-            if (mappedForeign.bool) {
-                if (typeof mappedVal === "number")
-                    mappedVal = mappedVal !== 0;
-                else if (typeof mappedVal === "string")
-                    mappedVal = mappedVal !== "0";
-            }
+            let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
             this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
             this.suppressStateChange.add(mappedForeign.stateId);
             this.setForeignState(mappedForeign.stateId, { val: mappedVal, ack: true });
@@ -705,6 +658,8 @@ class GiraEndpointAdapter extends utils.Adapter {
 }
 if (module.parent) {
     module.exports = (options) => new GiraEndpointAdapter(options);
+    module.exports.encodeUidValue = encodeUidValue;
+    module.exports.decodeAckValue = decodeAckValue;
 }
 else {
     (() => new GiraEndpointAdapter())();
