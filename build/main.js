@@ -498,6 +498,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                 const data = payload?.data;
                 if (!data)
                     return;
+                const tag = payload?.tag;
+                if (typeof tag === "string" &&
+                    (tag.startsWith("meta_") || tag.startsWith("status_"))) {
+                    // Responses for meta/status calls are handled separately
+                    return;
+                }
                 if (payload.type === "unsubscribe" && Array.isArray(data.items)) {
                     for (const item of data.items) {
                         if (!item)
