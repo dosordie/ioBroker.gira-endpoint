@@ -768,6 +768,11 @@ class GiraEndpointAdapter extends utils.Adapter {
     onStateChange(id, state) {
         if (!state || !this.client)
             return;
+        // In case we receive a fully qualified id (e.g. from setForeignState),
+        // strip the adapter namespace so further processing works as expected.
+        if (id.startsWith(this.namespace + ".")) {
+            id = id.substring(this.namespace.length + 1);
+        }
         const mapped = this.forwardMap.get(id);
         if (mapped) {
             if (this.suppressStateChange.has(id)) {
@@ -853,8 +858,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (parts[parts.length - 1] !== "value")
             return;
         const baseId = parts.slice(0, parts.length - 1).join(".");
-        const key =
-            this.idKeyMap.get(baseId) ??
+        const key = this.idKeyMap.get(baseId) ??
             this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
         const boolKey = this.boolKeys.has(key);
         const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey);
