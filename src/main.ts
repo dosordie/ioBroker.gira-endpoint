@@ -30,6 +30,10 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     bool?: boolean;
     updateOnStart?: boolean;
   }[];
+  dataArchives?:
+    | string[]
+    | { key: string; name?: string }[]
+    | string;
 }
 
 export function encodeUidValue(
@@ -109,6 +113,10 @@ class GiraEndpointAdapter extends utils.Adapter {
   private pendingUpdates = new Map<string, any>();
   private skipInitialUpdate = new Set<string>();
   private pendingSubscriptions = new Set<string>();
+  private archiveKeys: string[] = [];
+  private archiveKeyIdMap = new Map<string, string>();
+  private archiveIdKeyMap = new Map<string, string>();
+  private archiveDescMap = new Map<string, string>();
 
   private notifyAdmin(message: string): void {
     this.sendTo("admin", "messageBox", {
@@ -166,6 +174,12 @@ class GiraEndpointAdapter extends utils.Adapter {
       await this.setObjectNotExistsAsync("CO@", {
         type: "channel",
         common: { name: "CO@" },
+        native: {},
+      });
+
+      await this.setObjectNotExistsAsync("DA@", {
+        type: "channel",
+        common: { name: "DA@" },
         native: {},
       });
 
@@ -242,6 +256,35 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.boolKeys = boolKeys;
       this.skipInitialUpdate = skipInitial;
 
+      const rawArchives = cfg.dataArchives;
+      const archiveKeys: string[] = [];
+      if (Array.isArray(rawArchives)) {
+        for (const a of rawArchives) {
+          if (typeof a === "object" && a) {
+            const key = this.normalizeArchiveKey(String((a as any).key ?? "").trim());
+            if (!key) continue;
+            const name = String((a as any).name ?? "").trim();
+            if (name) this.archiveDescMap.set(key, name);
+            archiveKeys.push(key);
+          } else {
+            const key = this.normalizeArchiveKey(String(a).trim());
+            if (!key) continue;
+            archiveKeys.push(key);
+          }
+        }
+      } else {
+        const arr = String(rawArchives ?? "")
+          .split(/[,;\s]+/)
+          .map((k) => k.trim())
+          .filter((k) => k)
+          .map((k) => this.normalizeArchiveKey(k));
+        archiveKeys.push(...arr);
+      }
+      for (const key of archiveKeys) {
+        if (!this.archiveDescMap.has(key)) this.archiveDescMap.set(key, key);
+      }
+      this.archiveKeys = archiveKeys;
+
       for (const key of endpointKeys) {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
       }
@@ -250,6 +293,11 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.log.info(
         `Configured endpoint keys: ${
           this.endpointKeys.length ? this.endpointKeys.join(", ") : "(none)"
+        }`
+      );
+      this.log.info(
+        `Configured data archive keys: ${
+          this.archiveKeys.length ? this.archiveKeys.join(", ") : "(none)"
         }`
       );
       if (this.forwardMap.size) {
@@ -292,7 +340,39 @@ class GiraEndpointAdapter extends utils.Adapter {
         await this.setStateAsync(subId, { val: false, ack: true });
       }
 
+      for (const key of new Set(this.archiveKeys)) {
+        const baseId = `DA@.${this.sanitizeArchiveId(key)}`;
+        this.archiveKeyIdMap.set(key, baseId);
+        this.archiveIdKeyMap.set(baseId, key);
+        const name = this.archiveDescMap.get(key) || key;
+        await this.setObjectNotExistsAsync(baseId, {
+          type: "channel",
+          common: { name },
+          native: {},
+        });
+        await this.setObjectNotExistsAsync(`${baseId}.meta`, {
+          type: "state",
+          common: { name: "meta", type: "string", role: "json", read: true, write: true },
+          native: {},
+        });
+        await this.setObjectNotExistsAsync(`${baseId}.query`, {
+          type: "state",
+          common: { name: "query", type: "string", role: "json", read: true, write: true },
+          native: {},
+        });
+        await this.setObjectNotExistsAsync(`${baseId}.data`, {
+          type: "state",
+          common: { name: "data", type: "string", role: "json", read: true, write: false },
+          native: {},
+        });
+        this.subscribeStates(`${baseId}.meta`);
+        this.subscribeStates(`${baseId}.query`);
+      }
+
       const validIds = new Set(this.keyIdMap.values());
+      const validArchiveBases = new Set(
+        this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`)
+      );
       const validSubIds = new Set(
         this.endpointKeys.map((k) => `info.subscriptions.${this.sanitizeId(k)}`)
       );
@@ -304,6 +384,14 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (id.startsWith("CO@.")) {
           if (!validIds.has(id)) {
             const msg = `Deleting stale endpoint state ${id}`;
+            this.log.info(msg);
+            this.notifyAdmin(msg);
+            await this.delObjectAsync(id, { recursive: true });
+          }
+        } else if (id.startsWith("DA@.")) {
+          const base = id.split(".").slice(0, 2).join(".");
+          if (!validArchiveBases.has(base)) {
+            const msg = `Deleting stale data archive state ${id}`;
             this.log.info(msg);
             this.notifyAdmin(msg);
             await this.delObjectAsync(id, { recursive: true });
@@ -586,6 +674,15 @@ class GiraEndpointAdapter extends utils.Adapter {
     return s.replace(/^CO@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
   }
 
+  private normalizeArchiveKey(k: string): string {
+    k = k.trim().toUpperCase();
+    return k.startsWith("DA@") ? k : `DA@${k}`;
+  }
+
+  private sanitizeArchiveId(s: string): string {
+    return s.replace(/^DA@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
+  }
+
   private async onUnload(callback: () => void): Promise<void> {
     try {
       this.log.info("Shutting down...");
@@ -636,6 +733,51 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.pendingUpdates.delete(mapped.key);
         this.clearTimeout(timer);
       }, 1000);
+      return;
+    }
+    if (id.startsWith("DA@.")) {
+      if (state.ack) return;
+      const parts = id.split(".");
+      const action = parts.pop();
+      const baseId = parts.join(".");
+      const key = this.archiveIdKeyMap.get(baseId);
+      if (!key || !action) return;
+      if (action === "meta") {
+        const prom = this.client.call(key, "meta", undefined, `meta_${Date.now()}`);
+        if (prom) {
+          prom
+            .then((resp: any) => {
+              this.setState(id, { val: JSON.stringify(resp.data), ack: true });
+            })
+            .catch((err: any) => {
+              this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
+            });
+        }
+      } else if (action === "query") {
+        let params: any;
+        try {
+          params =
+            typeof state.val === "string" ? JSON.parse(state.val) : state.val;
+          if (!params || typeof params !== "object") throw new Error();
+        } catch {
+          this.log.warn(`Invalid query parameters for ${id}: ${state.val}`);
+          return;
+        }
+        const prom = this.client.call(key, "get", params, `get_${Date.now()}`);
+        if (prom) {
+          prom
+            .then((resp: any) => {
+              this.setState(id, { val: state.val, ack: true });
+              this.setState(`${baseId}.data`, {
+                val: JSON.stringify(resp.data),
+                ack: true,
+              });
+            })
+            .catch((err: any) => {
+              this.log.error(`Get call failed for ${key}: ${err?.message || err}`);
+            });
+        }
+      }
       return;
     }
 

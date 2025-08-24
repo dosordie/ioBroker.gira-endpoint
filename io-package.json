@@ -63,7 +63,8 @@
     "rejectUnauthorized": true,
     "updateLastEvent": false,
     "endpointKeys": [],
-    "mappings": []
+    "mappings": [],
+    "dataArchives": []
   },
   "objects": [],
   "instanceObjects": [
