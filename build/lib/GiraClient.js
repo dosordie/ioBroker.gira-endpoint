@@ -14,6 +14,8 @@ class GiraClient extends events_1.EventEmitter {
     constructor(opts) {
         super();
         this.closedByUser = false;
+        this.awaitingPong = false;
+        this.contextResolvers = new Map();
         // Defaults + Merge ohne doppelte Literal-Keys (TS2783 vermeiden)
         const defaults = {
             host: "",
@@ -22,6 +24,7 @@ class GiraClient extends events_1.EventEmitter {
             path: "/",
             username: "",
             password: "",
+            authHeader: false,
             pingIntervalMs: 30000,
             reconnect: { minMs: 1000, maxMs: 30000 },
             tls: {},
@@ -42,9 +45,13 @@ class GiraClient extends events_1.EventEmitter {
         const scheme = this.opts.ssl ? "wss" : "ws";
         const headers = {};
         const token = Buffer.from(`${this.opts.username ?? ""}:${this.opts.password ?? ""}`).toString("base64");
+        const encodedToken = encodeURIComponent(token);
         const path = this.opts.path.startsWith("/") ? this.opts.path : `/${this.opts.path}`;
-        const query = this.opts.username ? `?authorization=${token}` : "";
+        const query = this.opts.username && !this.opts.authHeader ? `?authorization=${encodedToken}` : "";
         const url = `${scheme}://${this.opts.host}:${this.opts.port}${path}${query}`;
+        if (this.opts.username && this.opts.authHeader) {
+            headers.Authorization = `Basic ${token}`;
+        }
         const wsOpts = { headers, ...this.opts.tls };
         const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
         if (proxy) {
@@ -57,13 +64,17 @@ class GiraClient extends events_1.EventEmitter {
                 this.emit("error", err);
             }
         }
-        this.ws = new ws_1.default(url, wsOpts);
-        this.ws.on("open", () => {
+        const ws = (this.ws = new ws_1.default(url, wsOpts));
+        ws.on("open", () => {
             this.emit("open");
             this.backoffMs = this.opts.reconnect.minMs;
+            this.awaitingPong = false;
             this.startPing();
         });
-        this.ws.on("message", (data) => {
+        ws.on("pong", () => {
+            this.awaitingPong = false;
+        });
+        ws.on("message", (data) => {
             try {
                 const text = typeof data === "string" ? data : data.toString("utf8");
                 // Gira-Event-Format: hier anpassen. Wir nehmen zunächst JSON an.
@@ -74,20 +85,46 @@ class GiraClient extends events_1.EventEmitter {
                 catch {
                     payload = { raw: text };
                 }
+                if (payload &&
+                    typeof payload === "object" &&
+                    payload.code !== undefined &&
+                    payload.code !== 0) {
+                    const msg = payload.message ||
+                        payload.error ||
+                        `Error code ${payload.code}`;
+                    const ctx = payload.context;
+                    if (ctx && this.contextResolvers.has(ctx)) {
+                        const resolver = this.contextResolvers.get(ctx);
+                        if (resolver?.timer)
+                            clearTimeout(resolver.timer);
+                        resolver?.reject(new Error(msg));
+                        this.contextResolvers.delete(ctx);
+                    }
+                    this.emit("error", new Error(msg));
+                    return;
+                }
                 this.normalizeData(payload?.data);
                 this.emit("event", payload);
+                const ctx = payload?.context;
+                if (ctx && this.contextResolvers.has(ctx)) {
+                    const resolver = this.contextResolvers.get(ctx);
+                    if (resolver?.timer)
+                        clearTimeout(resolver.timer);
+                    resolver?.resolve(payload);
+                    this.contextResolvers.delete(ctx);
+                }
             }
             catch (err) {
                 this.emit("error", err);
             }
         });
-        this.ws.on("close", (code, reason) => {
+        ws.on("close", (code, reason) => {
             this.stopPing();
             this.emit("close", { code, reason: reason.toString() });
             if (!this.closedByUser)
                 this.scheduleReconnect();
         });
-        this.ws.on("error", (err) => {
+        ws.on("error", (err) => {
             this.emit("error", err);
             // ws löst danach "close" aus → Reconnect wird dort geplant
         });
@@ -97,6 +134,45 @@ class GiraClient extends events_1.EventEmitter {
             const data = typeof obj === "string" ? obj : JSON.stringify(obj);
             this.ws.send(data);
         }
+    }
+    call(key, method, params, context, timeoutMs = 10000) {
+        const param = { key, method };
+        if (params !== undefined) {
+            if (params && typeof params === "object" && !Array.isArray(params)) {
+                Object.assign(param, params);
+            }
+            else {
+                param.value = params;
+            }
+        }
+        const msg = { type: "call", param };
+        if (context) {
+            msg.context = context;
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error("Timeout"));
+                    this.contextResolvers.delete(context);
+                }, timeoutMs);
+                this.contextResolvers.set(context, { resolve, reject, timer });
+                this.send(msg);
+            });
+        }
+        this.send(msg);
+    }
+    select(filter, context, timeoutMs = 10000) {
+        const msg = { type: "select", param: filter };
+        if (context) {
+            msg.context = context;
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error("Timeout"));
+                    this.contextResolvers.delete(context);
+                }, timeoutMs);
+                this.contextResolvers.set(context, { resolve, reject, timer });
+                this.send(msg);
+            });
+        }
+        this.send(msg);
     }
     subscribe(keys) {
         this.send({ type: "subscribe", param: { keys } });
@@ -155,8 +231,18 @@ class GiraClient extends events_1.EventEmitter {
         if (!this.opts.pingIntervalMs || this.opts.pingIntervalMs <= 0)
             return;
         this.pingTimer = setInterval(() => {
+            if (!this.ws || this.ws.readyState !== ws_1.default.OPEN)
+                return;
+            if (this.awaitingPong) {
+                try {
+                    this.ws.terminate();
+                }
+                catch { /* ignore */ }
+                return;
+            }
             try {
-                this.send({ type: "ping", ts: Date.now() });
+                this.awaitingPong = true;
+                this.ws.ping();
             }
             catch { /* ignore */ }
         }, this.opts.pingIntervalMs);
@@ -165,6 +251,7 @@ class GiraClient extends events_1.EventEmitter {
         if (this.pingTimer)
             clearInterval(this.pingTimer);
         this.pingTimer = undefined;
+        this.awaitingPong = false;
     }
     scheduleReconnect() {
         const { maxMs } = this.opts.reconnect;

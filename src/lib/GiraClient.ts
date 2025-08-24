@@ -19,6 +19,10 @@ export interface GiraClientOptions {
   path: string;
   username?: string;
   password?: string;
+  /**
+   * Sends the auth token as HTTP header instead of query parameter when true.
+   */
+  authHeader?: boolean;
   pingIntervalMs?: number;
   reconnect?: Partial<ReconnectOptions>;
   tls?: {
@@ -33,17 +37,27 @@ type ResolvedGiraClientOptions = Omit<GiraClientOptions, "reconnect"> & {
   reconnect: ReconnectOptions;
   username: string;
   password: string;
+  authHeader: boolean;
   pingIntervalMs: number;
   tls: NonNullable<GiraClientOptions["tls"]>;
 };
 
 export class GiraClient extends EventEmitter {
-  private ws?: WebSocket;
+  private ws?: WebSocket & { ping: () => void; terminate: () => void };
   private closedByUser = false;
   private opts: ResolvedGiraClientOptions;
   private backoffMs: number;
   private pingTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
+  private awaitingPong = false;
+  private contextResolvers = new Map<
+    string,
+    {
+      resolve: (value: any) => void;
+      reject: (reason?: any) => void;
+      timer?: NodeJS.Timeout;
+    }
+  >();
 
   constructor(opts: GiraClientOptions) {
     super();
@@ -55,6 +69,7 @@ export class GiraClient extends EventEmitter {
       path: "/",
       username: "",
       password: "",
+      authHeader: false,
       pingIntervalMs: 30000,
       reconnect: { minMs: 1000, maxMs: 30000 },
       tls: {},
@@ -76,10 +91,16 @@ export class GiraClient extends EventEmitter {
     const scheme = this.opts.ssl ? "wss" : "ws";
 
     const headers: Record<string, string> = {};
-    const token = Buffer.from(`${this.opts.username ?? ""}:${this.opts.password ?? ""}`).toString("base64");
+    const token = Buffer.from(
+      `${this.opts.username ?? ""}:${this.opts.password ?? ""}`
+    ).toString("base64");
+    const encodedToken = encodeURIComponent(token);
     const path = this.opts.path.startsWith("/") ? this.opts.path : `/${this.opts.path}`;
-    const query = this.opts.username ? `?authorization=${token}` : "";
+    const query = this.opts.username && !this.opts.authHeader ? `?authorization=${encodedToken}` : "";
     const url = `${scheme}://${this.opts.host}:${this.opts.port}${path}${query}`;
+    if (this.opts.username && this.opts.authHeader) {
+      headers.Authorization = `Basic ${token}`;
+    }
 
     const wsOpts: any = { headers, ...this.opts.tls };
     const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
@@ -93,15 +114,20 @@ export class GiraClient extends EventEmitter {
       }
     }
 
-    this.ws = new WebSocket(url, wsOpts);
+    const ws = (this.ws = new WebSocket(url, wsOpts) as any);
 
-    this.ws.on("open", () => {
+    ws.on("open", () => {
       this.emit("open");
       this.backoffMs = this.opts.reconnect.minMs;
+      this.awaitingPong = false;
       this.startPing();
     });
 
-    this.ws.on("message", (data) => {
+    ws.on("pong", () => {
+      this.awaitingPong = false;
+    });
+
+    ws.on("message", (data: any) => {
       try {
         const text = typeof data === "string" ? data : data.toString("utf8");
         // Gira-Event-Format: hier anpassen. Wir nehmen zunächst JSON an.
@@ -109,20 +135,47 @@ export class GiraClient extends EventEmitter {
         try { payload = JSON.parse(text); } catch {
           payload = { raw: text };
         }
+        if (
+          payload &&
+          typeof payload === "object" &&
+          payload.code !== undefined &&
+          payload.code !== 0
+        ) {
+          const msg =
+            (payload as any).message ||
+            (payload as any).error ||
+            `Error code ${payload.code}`;
+          const ctx = (payload as any).context;
+          if (ctx && this.contextResolvers.has(ctx)) {
+            const resolver = this.contextResolvers.get(ctx);
+            if (resolver?.timer) clearTimeout(resolver.timer as any);
+            resolver?.reject(new Error(msg));
+            this.contextResolvers.delete(ctx);
+          }
+          this.emit("error", new Error(msg));
+          return;
+        }
         this.normalizeData(payload?.data);
         this.emit("event", payload);
+        const ctx = payload?.context;
+        if (ctx && this.contextResolvers.has(ctx)) {
+          const resolver = this.contextResolvers.get(ctx);
+          if (resolver?.timer) clearTimeout(resolver.timer as any);
+          resolver?.resolve(payload);
+          this.contextResolvers.delete(ctx);
+        }
       } catch (err) {
         this.emit("error", err);
       }
     });
 
-    this.ws.on("close", (code, reason) => {
+    ws.on("close", (code: any, reason: any) => {
       this.stopPing();
       this.emit("close", { code, reason: reason.toString() });
       if (!this.closedByUser) this.scheduleReconnect();
     });
 
-    this.ws.on("error", (err) => {
+    ws.on("error", (err: any) => {
       this.emit("error", err);
       // ws löst danach "close" aus → Reconnect wird dort geplant
     });
@@ -133,6 +186,56 @@ export class GiraClient extends EventEmitter {
       const data = typeof obj === "string" ? obj : JSON.stringify(obj);
       this.ws.send(data);
     }
+  }
+
+  public call(
+    key: string,
+    method: string,
+    params?: any,
+    context?: string,
+    timeoutMs = 10000
+  ): Promise<any> | void {
+    const param: any = { key, method };
+    if (params !== undefined) {
+      if (params && typeof params === "object" && !Array.isArray(params)) {
+        Object.assign(param, params);
+      } else {
+        param.value = params;
+      }
+    }
+    const msg: any = { type: "call", param };
+    if (context) {
+      msg.context = context;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error("Timeout"));
+          this.contextResolvers.delete(context);
+        }, timeoutMs);
+        this.contextResolvers.set(context, { resolve, reject, timer });
+        this.send(msg);
+      });
+    }
+    this.send(msg);
+  }
+
+  public select(
+    filter: object,
+    context?: string,
+    timeoutMs = 10000
+  ): Promise<any> | void {
+    const msg: any = { type: "select", param: filter };
+    if (context) {
+      msg.context = context;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error("Timeout"));
+          this.contextResolvers.delete(context);
+        }, timeoutMs);
+        this.contextResolvers.set(context, { resolve, reject, timer });
+        this.send(msg);
+      });
+    }
+    this.send(msg);
   }
 
   public subscribe(keys: string[]): void {
@@ -189,13 +292,22 @@ export class GiraClient extends EventEmitter {
     this.stopPing();
     if (!this.opts.pingIntervalMs || this.opts.pingIntervalMs <= 0) return;
     this.pingTimer = setInterval(() => {
-      try { this.send({ type: "ping", ts: Date.now() }); } catch { /* ignore */ }
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      if (this.awaitingPong) {
+        try { this.ws.terminate(); } catch { /* ignore */ }
+        return;
+      }
+      try {
+        this.awaitingPong = true;
+        this.ws.ping();
+      } catch { /* ignore */ }
     }, this.opts.pingIntervalMs);
   }
 
   private stopPing(): void {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = undefined;
+    this.awaitingPong = false;
   }
 
   private scheduleReconnect(): void {
