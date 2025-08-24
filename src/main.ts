@@ -649,6 +649,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             entries.push({ key, data: value });
           } else {
             for (const [key, val] of Object.entries(data)) {
+              if (!key.includes("@")) {
+                this.log.debug(`Ignoring property ${key} without @`);
+                continue;
+              }
               const obj = typeof val === "object" && val !== null ? val : { value: val };
               entries.push({ key, data: obj });
             }
