@@ -853,7 +853,9 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (parts[parts.length - 1] !== "value")
             return;
         const baseId = parts.slice(0, parts.length - 1).join(".");
-        const key = this.idKeyMap.get(baseId) ?? this.normalizeKey(parts[1]);
+        const key =
+            this.idKeyMap.get(baseId) ??
+            this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
         const boolKey = this.boolKeys.has(key);
         const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey);
         this.client.call(key, method, uidValue);
