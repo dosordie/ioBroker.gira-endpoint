@@ -50,7 +50,7 @@ export class GiraClient extends EventEmitter {
   private pingTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
   private awaitingPong = false;
-  private contextResolvers = new Map<
+  private tagResolvers = new Map<
     string,
     {
       resolve: (value: any) => void;
@@ -145,24 +145,24 @@ export class GiraClient extends EventEmitter {
             (payload as any).message ||
             (payload as any).error ||
             `Error code ${payload.code}`;
-          const ctx = (payload as any).context;
-          if (ctx && this.contextResolvers.has(ctx)) {
-            const resolver = this.contextResolvers.get(ctx);
+          const tag = (payload as any).tag;
+          if (tag && this.tagResolvers.has(tag)) {
+            const resolver = this.tagResolvers.get(tag);
             if (resolver?.timer) clearTimeout(resolver.timer as any);
             resolver?.reject(new Error(msg));
-            this.contextResolvers.delete(ctx);
+            this.tagResolvers.delete(tag);
           }
           this.emit("error", new Error(msg));
           return;
         }
         this.normalizeData(payload?.data);
         this.emit("event", payload);
-        const ctx = payload?.context;
-        if (ctx && this.contextResolvers.has(ctx)) {
-          const resolver = this.contextResolvers.get(ctx);
+        const tag = payload?.tag;
+        if (tag && this.tagResolvers.has(tag)) {
+          const resolver = this.tagResolvers.get(tag);
           if (resolver?.timer) clearTimeout(resolver.timer as any);
           resolver?.resolve(payload);
-          this.contextResolvers.delete(ctx);
+          this.tagResolvers.delete(tag);
         }
       } catch (err) {
         this.emit("error", err);
@@ -192,7 +192,7 @@ export class GiraClient extends EventEmitter {
     key: string,
     method: string,
     params?: any,
-    context?: string,
+    tag?: string,
     timeoutMs = 10000
   ): Promise<any> | void {
     const param: any = { key, method };
@@ -204,14 +204,14 @@ export class GiraClient extends EventEmitter {
       }
     }
     const msg: any = { type: "call", param };
-    if (context) {
-      msg.context = context;
+    if (tag) {
+      msg.tag = tag;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           reject(new Error("Timeout"));
-          this.contextResolvers.delete(context);
+          this.tagResolvers.delete(tag);
         }, timeoutMs);
-        this.contextResolvers.set(context, { resolve, reject, timer });
+        this.tagResolvers.set(tag, { resolve, reject, timer });
         this.send(msg);
       });
     }
@@ -220,18 +220,18 @@ export class GiraClient extends EventEmitter {
 
   public select(
     filter: object,
-    context?: string,
+    tag?: string,
     timeoutMs = 10000
   ): Promise<any> | void {
     const msg: any = { type: "select", param: filter };
-    if (context) {
-      msg.context = context;
+    if (tag) {
+      msg.tag = tag;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           reject(new Error("Timeout"));
-          this.contextResolvers.delete(context);
+          this.tagResolvers.delete(tag);
         }, timeoutMs);
-        this.contextResolvers.set(context, { resolve, reject, timer });
+        this.tagResolvers.set(tag, { resolve, reject, timer });
         this.send(msg);
       });
     }
