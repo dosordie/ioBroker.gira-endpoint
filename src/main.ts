@@ -697,6 +697,34 @@ class GiraEndpointAdapter extends utils.Adapter {
             native: {},
           });
 
+          // Ensure standard states exist for dynamically discovered keys
+          const subId = `${baseId}.subscription`;
+          await this.extendObjectAsync(subId, {
+            type: "state",
+            common: {
+              name: "subscription",
+              type: "boolean",
+              role: "indicator",
+              read: true,
+              write: false,
+            },
+            native: {},
+          });
+          await this.setStateAsync(subId, { val: true, ack: true });
+          await this.extendObjectAsync(`${baseId}.status`, {
+            type: "state",
+            common: { name: "status", type: "string", role: "state", read: true, write: true },
+            native: {},
+          });
+          await this.extendObjectAsync(`${baseId}.meta`, {
+            type: "state",
+            common: { name: "meta", type: "string", role: "json", read: true, write: true },
+            native: {},
+          });
+          this.subscribeStates(`${baseId}.value`);
+          this.subscribeStates(`${baseId}.meta`);
+          this.subscribeStates(`${baseId}.status`);
+
           if (!this.fetchedMeta.has(normalized)) {
             this.fetchedMeta.add(normalized);
             this.fetchMetaStatus(normalized, baseId);
