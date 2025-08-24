@@ -789,32 +789,52 @@ class GiraEndpointAdapter extends utils.Adapter {
     makeTag(prefix) {
         return `${prefix}_${(0, crypto_1.randomUUID)()}`;
     }
-    fetchMetaStatus(key, baseId) {
+    async applyMeta(key, baseId, meta, archive = false) {
+        if (!meta || typeof meta !== "object")
+            return;
+        const name = meta.desc || meta.name || meta.label;
+        if (!name)
+            return;
+        if (archive) {
+            this.archiveDescMap.set(key, name);
+        }
+        else {
+            this.keyDescMap.set(key, name);
+        }
+        await this.extendObjectAsync(baseId, {
+            type: "channel",
+            common: { name },
+            native: {},
+        });
+    }
+    async fetchMetaStatus(key, baseId) {
         if (!this.client)
             return;
-        const metaProm = this.client.call(key, "meta", undefined, this.makeTag("meta"));
-        if (metaProm) {
-            metaProm
-                .then((resp) => {
-                this.setState(`${baseId}.meta`, { val: JSON.stringify(resp.data), ack: true });
-            })
-                .catch((err) => {
-                this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
-            });
+        try {
+            const metaResp = await this.client.call(key, "meta", undefined, this.makeTag("meta"));
+            if (metaResp?.data !== undefined) {
+                await this.applyMeta(key, baseId, metaResp.data);
+                await this.setStateAsync(`${baseId}.meta`, {
+                    val: JSON.stringify(metaResp.data),
+                    ack: true,
+                });
+            }
         }
-        const statusProm = this.client.call(key, "status", undefined, this.makeTag("status"));
-        if (statusProm) {
-            statusProm
-                .then((resp) => {
-                let val = resp.data;
+        catch (err) {
+            this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
+        }
+        try {
+            const statusResp = await this.client.call(key, "status", undefined, this.makeTag("status"));
+            if (statusResp?.data !== undefined) {
+                let val = statusResp.data;
                 if (typeof val === "object") {
                     val = JSON.stringify(val);
                 }
-                this.setState(`${baseId}.status`, { val, ack: true });
-            })
-                .catch((err) => {
-                this.log.error(`Status call failed for ${key}: ${err?.message || err}`);
-            });
+                await this.setStateAsync(`${baseId}.status`, { val, ack: true });
+            }
+        }
+        catch (err) {
+            this.log.error(`Status call failed for ${key}: ${err?.message || err}`);
         }
     }
     async onUnload(callback) {
@@ -890,8 +910,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                 const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
                 if (prom) {
                     prom
-                        .then((resp) => {
-                        this.setState(id, { val: JSON.stringify(resp.data), ack: true });
+                        .then(async (resp) => {
+                        await this.applyMeta(key, baseId, resp.data, true);
+                        await this.setStateAsync(id, {
+                            val: JSON.stringify(resp.data),
+                            ack: true,
+                        });
                     })
                         .catch((err) => {
                         this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
@@ -942,8 +966,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
                     if (prom) {
                         prom
-                            .then((resp) => {
-                            this.setState(id, { val: JSON.stringify(resp.data), ack: true });
+                            .then(async (resp) => {
+                            await this.applyMeta(key, baseId, resp.data);
+                            await this.setStateAsync(id, {
+                                val: JSON.stringify(resp.data),
+                                ack: true,
+                            });
                         })
                             .catch((err) => {
                             this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
