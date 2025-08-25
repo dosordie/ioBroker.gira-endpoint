@@ -1,8 +1,8 @@
 {
   "Einstellungen": "Einstellungen",
   "Gira Endpoint Verbindung": "Gira Endpoint Verbindung",
-  "Host": "Host",
-  "192.168.x.y": "192.168.x.y",
+  "Gira Server": "Gira Server",
+  "IP oder FQDN": "IP oder FQDN",
   "Port": "Port",
   "TLS (wss://) aktivieren": "TLS (wss://) aktivieren",
   "Authentifizierung": "Authentifizierung",
