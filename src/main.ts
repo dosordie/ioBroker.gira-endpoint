@@ -543,8 +543,13 @@ class GiraEndpointAdapter extends utils.Adapter {
               native: {},
             });
             await this.setStateAsync(subId, { val: false, ack: true });
-            const statusText = codeToMessage(item.code ?? payload.code ?? 0);
-            await this.setStateAsync(`${baseId}.status`, { val: statusText, ack: true });
+            const statusText = this.translate(
+              codeToMessage(item.code ?? payload.code ?? 0)
+            );
+            await this.setStateAsync(`${baseId}.status`, {
+              val: statusText,
+              ack: true,
+            });
             if (item.code !== undefined && item.code !== 0) {
               const msg = `Unsubscribe failed for ${normalized} (${item.code})`;
               this.log.warn(msg);
@@ -734,8 +739,13 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.fetchMeta(normalized, baseId);
           }
 
-          const statusText = codeToMessage(code ?? payload.code ?? 0);
-          await this.setStateAsync(`${baseId}.status`, { val: statusText, ack: true });
+          const statusText = this.translate(
+            codeToMessage(code ?? payload.code ?? 0)
+          );
+          await this.setStateAsync(`${baseId}.status`, {
+            val: statusText,
+            ack: true,
+          });
 
           for (const [prop, raw] of Object.entries(data)) {
             const isValue = prop === "value";

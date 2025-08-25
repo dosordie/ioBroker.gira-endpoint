@@ -30,5 +30,14 @@
   "Datenarchive": "Datenarchive",
   "Liste der Homeserver Datenarchiv IDs die abgerufen werden": "Liste der Homeserver Datenarchiv IDs die abgerufen werden",
   "Hier die Datenarchiv IDs ohne das DA@ eintragen": "Hier die Datenarchiv IDs ohne das DA@ eintragen",
-  "DA@": "DA@"
+  "DA@": "DA@",
+  "Alles in Ordnung.": "Alles in Ordnung.",
+  "Ungültige Anfrage (Forbidden).": "Ungültige Anfrage (Forbidden).",
+  "Zugriff verweigert (Bad Request).": "Zugriff verweigert (Bad Request).",
+  "Das angefragte HS-Objekt existiert in dem aufgerufenen Kontext nicht.": "Das angefragte HS-Objekt existiert in dem aufgerufenen Kontext nicht.",
+  "Beim Erzeugen der Antwort ist im Server ein Fehler aufgetreten.": "Beim Erzeugen der Antwort ist im Server ein Fehler aufgetreten.",
+  "Der angegebene Schlüssel ist ungültig.": "Der angegebene Schlüssel ist ungültig.",
+  "reserviert": "reserviert",
+  "Die Objekt-Parameter sind ungültig.": "Die Objekt-Parameter sind ungültig.",
+  "Das Objekt ist nicht abonniert.": "Das Objekt ist nicht abonniert."
 }
