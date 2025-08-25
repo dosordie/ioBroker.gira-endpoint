@@ -34,7 +34,13 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   }[];
   dataArchives?:
     | string[]
-    | { key: string; name?: string }[]
+    | {
+        key: string;
+        name?: string;
+        start?: string;
+        end?: string;
+        columns?: string[] | string;
+      }[]
     | string;
 }
 
@@ -120,6 +126,10 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveKeyIdMap = new Map<string, string>();
   private archiveIdKeyMap = new Map<string, string>();
   private archiveDescMap = new Map<string, string>();
+  private archiveQueryDefaults = new Map<
+    string,
+    { from?: string; to?: string; columns?: string[] }
+  >();
   private fetchedMeta = new Set<string>();
 
   private notifyAdmin(message: string): void {
@@ -276,7 +286,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.reverseMap = reverseMap;
       this.boolKeys = boolKeys;
       this.skipInitialUpdate = skipInitial;
-
+      this.archiveQueryDefaults.clear();
       const rawArchives = cfg.dataArchives;
       const archiveKeys: string[] = [];
       if (Array.isArray(rawArchives)) {
@@ -286,6 +296,22 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (!key) continue;
             const name = String((a as any).name ?? "").trim();
             if (name) this.archiveDescMap.set(key, name);
+            const start = String((a as any).start ?? "").trim();
+            const end = String((a as any).end ?? "").trim();
+            let cols: any = (a as any).columns;
+            if (typeof cols === "string") {
+              cols = cols
+                .split(/[,;\s]+/)
+                .map((c: string) => c.trim())
+                .filter((c: string) => c);
+            }
+            const params: { from?: string; to?: string; columns?: string[] } = {};
+            if (start) params.from = start;
+            if (end) params.to = end;
+            if (Array.isArray(cols) && cols.length) params.columns = cols;
+            if (Object.keys(params).length) {
+              this.archiveQueryDefaults.set(key, params);
+            }
             archiveKeys.push(key);
           } else {
             const key = this.normalizeArchiveKey(String(a).trim());
@@ -550,6 +576,38 @@ class GiraEndpointAdapter extends utils.Adapter {
           );
           this.pendingSubscriptions.clear();
           this.client!.subscribe([]);
+        }
+        for (const [key, params] of this.archiveQueryDefaults.entries()) {
+          const baseId = this.archiveKeyIdMap.get(key);
+          if (!baseId) continue;
+          const queryParams: any = {};
+          if (params.from) queryParams.from = params.from;
+          if (params.to) queryParams.to = params.to;
+          if (params.columns && params.columns.length)
+            queryParams.columns = params.columns;
+          const prom = this.client!.call(key, "get", queryParams, this.makeTag("get"));
+          if (prom) {
+            prom
+              .then((resp: any) => {
+                this.setState(`${baseId}.data`, {
+                  val: JSON.stringify(resp.data),
+                  ack: true,
+                });
+              })
+              .catch((err: any) => {
+                this.log.error(
+                  this.translate(
+                    "Get call failed for %s: %s",
+                    key,
+                    err?.message || err
+                  )
+                );
+              });
+          }
+          this.setState(`${baseId}.query`, {
+            val: JSON.stringify(queryParams),
+            ack: true,
+          });
         }
       });
 
