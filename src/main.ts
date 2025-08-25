@@ -1,6 +1,7 @@
 import * as utils from "@iobroker/adapter-core";
 import { GiraClient, codeToMessage } from "./lib/GiraClient";
 import { randomUUID } from "crypto";
+import { format } from "util";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
@@ -133,6 +134,16 @@ class GiraEndpointAdapter extends utils.Adapter {
       ...options,
       name: "gira-endpoint",
     });
+    const origTranslate = (this as any).translate;
+    (this as any).translate = (
+      text: string,
+      ...args: any[]
+    ): string => {
+      if (typeof origTranslate === "function") {
+        return origTranslate.call(this, text, ...args);
+      }
+      return args.length ? format(text, ...args) : text;
+    };
     this.on("ready", this.onReady.bind(this));
     this.on("unload", this.onUnload.bind(this));
     this.on("stateChange", this.onStateChange.bind(this));

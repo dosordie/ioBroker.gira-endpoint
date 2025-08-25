@@ -38,6 +38,7 @@ exports.decodeAckValue = decodeAckValue;
 const utils = __importStar(require("@iobroker/adapter-core"));
 const GiraClient_1 = require("./lib/GiraClient");
 const crypto_1 = require("crypto");
+const util_1 = require("util");
 function encodeUidValue(val, boolMode) {
     let method = "set";
     let uidValue = val;
@@ -138,6 +139,13 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.archiveIdKeyMap = new Map();
         this.archiveDescMap = new Map();
         this.fetchedMeta = new Set();
+        const origTranslate = this.translate;
+        this.translate = (text, ...args) => {
+            if (typeof origTranslate === "function") {
+                return origTranslate.call(this, text, ...args);
+            }
+            return args.length ? (0, util_1.format)(text, ...args) : text;
+        };
         this.on("ready", this.onReady.bind(this));
         this.on("unload", this.onUnload.bind(this));
         this.on("stateChange", this.onStateChange.bind(this));
