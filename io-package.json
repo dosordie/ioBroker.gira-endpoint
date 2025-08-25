@@ -56,6 +56,7 @@
     "ssl": false,
     "username": "",
     "password": "",
+    "authHeader": false,
     "pingIntervalMs": 30000,
     "reconnect": {
       "minMs": 1000,

@@ -40,7 +40,7 @@
           "lg": 4,
           "xl": 4
         },
-        "authHeader": {
+        "authHeaderHeader": {
           "type": "header",
           "text": "Authentifizierung",
           "size": 2
@@ -57,6 +57,16 @@
         "password": {
           "type": "password",
           "label": "Passwort",
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 4,
+          "xl": 4
+        },
+        "authHeader": {
+          "type": "checkbox",
+          "label": "Auth-Header verwenden",
+          "default": false,
           "xs": 12,
           "sm": 6,
           "md": 6,

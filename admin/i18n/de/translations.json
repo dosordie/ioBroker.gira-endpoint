@@ -39,8 +39,7 @@
   "Der angegebene Schlüssel ist ungültig.": "Der angegebene Schlüssel ist ungültig.",
   "reserviert": "reserviert",
   "Die Objekt-Parameter sind ungültig.": "Die Objekt-Parameter sind ungültig.",
-  "Das Objekt ist nicht abonniert.": "Das Objekt ist nicht abonniert."
-,
+  "Das Objekt ist nicht abonniert.": "Das Objekt ist nicht abonniert.",
   "Info": "Info",
   "Connection": "Verbindung",
   "Last error": "Letzter Fehler",
@@ -83,5 +82,6 @@
   "onUnload error: %s": "Fehler in onUnload: %s",
   "Ignoring state change for %s because it was just updated from endpoint": "Ignoriere Zustandsänderung für %s, da sie gerade vom Endpoint aktualisiert wurde",
   "Invalid query parameters for %s: %s": "Ungültige Abfrageparameter für %s: %s",
-  "Get call failed for %s: %s": "Get-Aufruf fehlgeschlagen für %s: %s"
+  "Get call failed for %s: %s": "Get-Aufruf fehlgeschlagen für %s: %s",
+  "Auth-Header verwenden": "Auth-Header verwenden"
 }
