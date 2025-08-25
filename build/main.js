@@ -655,9 +655,17 @@ class GiraEndpointAdapter extends utils.Adapter {
                         });
                         await this.setStateAsync(subId, { val: success, ack: true });
                         if (!success) {
-                            const msg = this.translate("Subscription failed for %s", normalized);
+                            let msg = this.translate("Subscription failed for %s", normalized);
+                            if (item.code !== undefined) {
+                                const message = (0, GiraClient_1.codeToMessage)(item.code);
+                                const statusText = typeof this.translate === "function"
+                                    ? this.translate(message)
+                                    : message;
+                                msg += ` (${item.code} ${statusText})`;
+                            }
                             this.log.warn(msg);
                             this.notifyAdmin(msg);
+                            continue;
                         }
                         const value = item.data ?? { value: item.value };
                         entries.push({ key, data: value, code: item.code });
@@ -773,8 +781,14 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const success = code === undefined || code === 0;
                     await this.setStateAsync(subId, { val: success, ack: true });
                     if (!success) {
-                        const msg = this.translate("Subscription failed for %s", normalized) +
-                            (code !== undefined ? ` (${code})` : "");
+                        let msg = this.translate("Subscription failed for %s", normalized);
+                        if (code !== undefined) {
+                            const message = (0, GiraClient_1.codeToMessage)(code);
+                            const statusText = typeof this.translate === "function"
+                                ? this.translate(message)
+                                : message;
+                            msg += ` (${code} ${statusText})`;
+                        }
                         this.log.warn(msg);
                         this.notifyAdmin(msg);
                     }
