@@ -7,6 +7,22 @@ EventEmitter.defaultMaxListeners = 0;
 const BACKOFF_FACTOR = 1.7;
 const BACKOFF_JITTER = 0.2;
 
+const STATUS_CODE_MESSAGES: Record<number, string> = {
+  0: "Ok",
+  400: "Ungültige Anfrage (Forbidden).",
+  403: "Zugriff verweigert (Bad Request).",
+  404: "Das angefragte HS-Objekt existiert in dem aufgerufenen Kontext nicht.",
+  500: "Beim Erzeugen der Antwort ist im Server ein Fehler aufgetreten.",
+  901: "Der angegebene Schlüssel ist ungültig.",
+  902: "reserviert",
+  903: "Die Objekt-Parameter sind ungültig.",
+  904: "Das Objekt ist nicht abonniert.",
+};
+
+export function codeToMessage(code: number): string {
+  return STATUS_CODE_MESSAGES[code] || `Error code ${code}`;
+}
+
 interface ReconnectOptions {
   minMs: number;
   maxMs: number;
@@ -50,7 +66,7 @@ export class GiraClient extends EventEmitter {
   private pingTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
   private awaitingPong = false;
-  private contextResolvers = new Map<
+  private tagResolvers = new Map<
     string,
     {
       resolve: (value: any) => void;
@@ -58,6 +74,7 @@ export class GiraClient extends EventEmitter {
       timer?: NodeJS.Timeout;
     }
   >();
+  private requestTags = new Map<string, string>();
 
   constructor(opts: GiraClientOptions) {
     super();
@@ -144,25 +161,55 @@ export class GiraClient extends EventEmitter {
           const msg =
             (payload as any).message ||
             (payload as any).error ||
-            `Error code ${payload.code}`;
-          const ctx = (payload as any).context;
-          if (ctx && this.contextResolvers.has(ctx)) {
-            const resolver = this.contextResolvers.get(ctx);
+            codeToMessage(payload.code);
+          const tag = (payload as any).tag;
+          const err: any = new Error(msg);
+          err.code = payload.code;
+          if (tag && this.tagResolvers.has(tag)) {
+            const resolver = this.tagResolvers.get(tag);
             if (resolver?.timer) clearTimeout(resolver.timer as any);
-            resolver?.reject(new Error(msg));
-            this.contextResolvers.delete(ctx);
+            resolver?.reject(err);
+            this.tagResolvers.delete(tag);
+            if (payload?.request) {
+              const reqKey = this.makeRequestKey(payload.request);
+              this.requestTags.delete(reqKey);
+            }
+          } else if (payload?.request) {
+            const reqKey = this.makeRequestKey(payload.request);
+            const t = this.requestTags.get(reqKey);
+            if (t && this.tagResolvers.has(t)) {
+              const resolver = this.tagResolvers.get(t);
+              if (resolver?.timer) clearTimeout(resolver.timer as any);
+              resolver?.reject(err);
+              this.tagResolvers.delete(t);
+              this.requestTags.delete(reqKey);
+            }
           }
-          this.emit("error", new Error(msg));
+          this.emit("error", err);
           return;
         }
         this.normalizeData(payload?.data);
         this.emit("event", payload);
-        const ctx = payload?.context;
-        if (ctx && this.contextResolvers.has(ctx)) {
-          const resolver = this.contextResolvers.get(ctx);
+        const tag = payload?.tag;
+        if (tag && this.tagResolvers.has(tag)) {
+          const resolver = this.tagResolvers.get(tag);
           if (resolver?.timer) clearTimeout(resolver.timer as any);
           resolver?.resolve(payload);
-          this.contextResolvers.delete(ctx);
+          this.tagResolvers.delete(tag);
+          if (payload?.request) {
+            const reqKey = this.makeRequestKey(payload.request);
+            this.requestTags.delete(reqKey);
+          }
+        } else if (payload?.request) {
+          const reqKey = this.makeRequestKey(payload.request);
+          const t = this.requestTags.get(reqKey);
+          if (t && this.tagResolvers.has(t)) {
+            const resolver = this.tagResolvers.get(t);
+            if (resolver?.timer) clearTimeout(resolver.timer as any);
+            resolver?.resolve(payload);
+            this.tagResolvers.delete(t);
+            this.requestTags.delete(reqKey);
+          }
         }
       } catch (err) {
         this.emit("error", err);
@@ -188,11 +235,19 @@ export class GiraClient extends EventEmitter {
     }
   }
 
+  private makeRequestKey(obj: any): string {
+    if (!obj || typeof obj !== "object") return String(obj);
+    const keys = Object.keys(obj).sort();
+    const sorted: any = {};
+    for (const k of keys) sorted[k] = obj[k];
+    return JSON.stringify(sorted);
+  }
+
   public call(
     key: string,
     method: string,
     params?: any,
-    context?: string,
+    tag?: string,
     timeoutMs = 10000
   ): Promise<any> | void {
     const param: any = { key, method };
@@ -204,14 +259,17 @@ export class GiraClient extends EventEmitter {
       }
     }
     const msg: any = { type: "call", param };
-    if (context) {
-      msg.context = context;
+    if (tag) {
+      msg.tag = tag;
+      const reqKey = this.makeRequestKey(param);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           reject(new Error("Timeout"));
-          this.contextResolvers.delete(context);
+          this.tagResolvers.delete(tag);
+          this.requestTags.delete(reqKey);
         }, timeoutMs);
-        this.contextResolvers.set(context, { resolve, reject, timer });
+        this.tagResolvers.set(tag, { resolve, reject, timer });
+        this.requestTags.set(reqKey, tag);
         this.send(msg);
       });
     }
@@ -220,18 +278,18 @@ export class GiraClient extends EventEmitter {
 
   public select(
     filter: object,
-    context?: string,
+    tag?: string,
     timeoutMs = 10000
   ): Promise<any> | void {
     const msg: any = { type: "select", param: filter };
-    if (context) {
-      msg.context = context;
+    if (tag) {
+      msg.tag = tag;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           reject(new Error("Timeout"));
-          this.contextResolvers.delete(context);
+          this.tagResolvers.delete(tag);
         }, timeoutMs);
-        this.contextResolvers.set(context, { resolve, reject, timer });
+        this.tagResolvers.set(tag, { resolve, reject, timer });
         this.send(msg);
       });
     }
@@ -269,8 +327,6 @@ export class GiraClient extends EventEmitter {
         }
       }
     }
-    if (v === 1 || v === "1") v = true;
-    else if (v === 0 || v === "0") v = false;
     return v;
   }
 

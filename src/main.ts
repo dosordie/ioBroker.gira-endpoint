@@ -1,5 +1,7 @@
 import * as utils from "@iobroker/adapter-core";
-import { GiraClient } from "./lib/GiraClient";
+import { GiraClient, codeToMessage } from "./lib/GiraClient";
+import { randomUUID } from "crypto";
+import { format } from "util";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
@@ -32,7 +34,13 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   }[];
   dataArchives?:
     | string[]
-    | { key: string; name?: string }[]
+    | {
+        key: string;
+        name?: string;
+        start?: string;
+        end?: string;
+        columns?: string[] | string;
+      }[]
     | string;
 }
 
@@ -118,6 +126,11 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveKeyIdMap = new Map<string, string>();
   private archiveIdKeyMap = new Map<string, string>();
   private archiveDescMap = new Map<string, string>();
+  private archiveQueryDefaults = new Map<
+    string,
+    { from?: string; to?: string; columns?: string[] }
+  >();
+  private fetchedMeta = new Set<string>();
 
   private notifyAdmin(message: string): void {
     this.sendTo("admin", "messageBox", {
@@ -131,6 +144,16 @@ class GiraEndpointAdapter extends utils.Adapter {
       ...options,
       name: "gira-endpoint",
     });
+    const origTranslate = (this as any).translate;
+    (this as any).translate = (
+      text: string,
+      ...args: any[]
+    ): string => {
+      if (typeof origTranslate === "function") {
+        return origTranslate.call(this, text, ...args);
+      }
+      return args.length ? format(text, ...args) : text;
+    };
     this.on("ready", this.onReady.bind(this));
     this.on("unload", this.onUnload.bind(this));
     this.on("stateChange", this.onStateChange.bind(this));
@@ -140,13 +163,13 @@ class GiraEndpointAdapter extends utils.Adapter {
     try {
       await this.setObjectNotExistsAsync("info", {
         type: "channel",
-        common: { name: "Info" },
+        common: { name: this.translate("Info") },
         native: {},
       });
       await this.setObjectNotExistsAsync("info.connection", {
         type: "state",
         common: {
-          name: "Connection",
+          name: this.translate("Connection"),
           type: "boolean",
           role: "indicator.connected",
           read: true,
@@ -156,26 +179,38 @@ class GiraEndpointAdapter extends utils.Adapter {
       });
       await this.setObjectNotExistsAsync("info.lastError", {
         type: "state",
-        common: { name: "Last error", type: "string", role: "text", read: true, write: false },
+        common: {
+          name: this.translate("Last error"),
+          type: "string",
+          role: "text",
+          read: true,
+          write: false,
+        },
         native: {},
       });
       await this.setObjectNotExistsAsync("info.lastEvent", {
         type: "state",
-        common: { name: "Last event", type: "string", role: "json", read: true, write: false },
+        common: {
+          name: this.translate("Last event"),
+          type: "string",
+          role: "json",
+          read: true,
+          write: false,
+        },
         native: {},
       });
       await this.setStateAsync("info.connection", { val: false, ack: true });
-      this.log.debug("Pre-created info states");
+      this.log.debug(this.translate("Pre-created info states"));
 
       await this.setObjectNotExistsAsync("CO@", {
         type: "channel",
-        common: { name: "CO@" },
+        common: { name: this.translate("CO@") },
         native: {},
       });
 
       await this.setObjectNotExistsAsync("DA@", {
         type: "channel",
-        common: { name: "DA@" },
+        common: { name: this.translate("DA@") },
         native: {},
       });
 
@@ -251,7 +286,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.reverseMap = reverseMap;
       this.boolKeys = boolKeys;
       this.skipInitialUpdate = skipInitial;
-
+      this.archiveQueryDefaults.clear();
       const rawArchives = cfg.dataArchives;
       const archiveKeys: string[] = [];
       if (Array.isArray(rawArchives)) {
@@ -261,6 +296,22 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (!key) continue;
             const name = String((a as any).name ?? "").trim();
             if (name) this.archiveDescMap.set(key, name);
+            const start = String((a as any).start ?? "").trim();
+            const end = String((a as any).end ?? "").trim();
+            let cols: any = (a as any).columns;
+            if (typeof cols === "string") {
+              cols = cols
+                .split(/[,;\s]+/)
+                .map((c: string) => c.trim())
+                .filter((c: string) => c);
+            }
+            const params: { from?: string; to?: string; columns?: string[] } = {};
+            if (start) params.from = start;
+            if (end) params.to = end;
+            if (Array.isArray(cols) && cols.length) params.columns = cols;
+            if (Object.keys(params).length) {
+              this.archiveQueryDefaults.set(key, params);
+            }
             archiveKeys.push(key);
           } else {
             const key = this.normalizeArchiveKey(String(a).trim());
@@ -286,21 +337,26 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
       this.endpointKeys = endpointKeys;
 
+      const endpointKeysText = this.endpointKeys.length
+        ? this.endpointKeys.join(", ")
+        : this.translate("(none)");
       this.log.info(
-        `Configured endpoint keys: ${
-          this.endpointKeys.length ? this.endpointKeys.join(", ") : "(none)"
-        }`
+        this.translate("Configured endpoint keys: %s", endpointKeysText)
       );
+      const archiveKeysText = this.archiveKeys.length
+        ? this.archiveKeys.join(", ")
+        : this.translate("(none)");
       this.log.info(
-        `Configured data archive keys: ${
-          this.archiveKeys.length ? this.archiveKeys.join(", ") : "(none)"
-        }`
+        this.translate("Configured data archive keys: %s", archiveKeysText)
       );
       if (this.forwardMap.size) {
         this.log.info(
-          `Configured forward mappings: ${Array.from(this.forwardMap.entries())
-            .map(([s, m]) => `${s}→${m.key}`)
-            .join(", ")}`
+          this.translate(
+            "Configured forward mappings: %s",
+            Array.from(this.forwardMap.entries())
+              .map(([s, m]) => `${s}→${m.key}`)
+              .join(", ")
+          )
         );
         for (const stateId of this.forwardMap.keys()) {
           this.subscribeForeignStates(stateId);
@@ -308,9 +364,12 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
       if (this.reverseMap.size) {
         this.log.info(
-          `Configured reverse mappings: ${Array.from(this.reverseMap.entries())
-            .map(([k, m]) => `${k}→${m.stateId}`)
-            .join(", ")}`
+          this.translate(
+            "Configured reverse mappings: %s",
+            Array.from(this.reverseMap.entries())
+              .map(([k, m]) => `${k}→${m.stateId}`)
+              .join(", ")
+          )
         );
       }
 
@@ -327,13 +386,19 @@ class GiraEndpointAdapter extends utils.Adapter {
         });
         await this.setObjectNotExistsAsync(`${baseId}.value`, {
           type: "state",
-          common: { name: "value", type: "mixed", role: "state", read: true, write: true },
+          common: {
+            name: this.translate("value"),
+            type: "mixed",
+            role: "state",
+            read: true,
+            write: true,
+          },
           native: {},
         });
         await this.setObjectNotExistsAsync(`${baseId}.subscription`, {
           type: "state",
           common: {
-            name: "subscription",
+            name: this.translate("subscription"),
             type: "boolean",
             role: "indicator",
             read: true,
@@ -344,16 +409,31 @@ class GiraEndpointAdapter extends utils.Adapter {
         await this.setStateAsync(`${baseId}.subscription`, { val: false, ack: true });
         await this.setObjectNotExistsAsync(`${baseId}.status`, {
           type: "state",
-          common: { name: "status", type: "string", role: "state", read: true, write: true },
+          common: {
+            name: this.translate("status"),
+            type: "string",
+            role: "state",
+            read: true,
+            write: false,
+          },
           native: {},
         });
         await this.setObjectNotExistsAsync(`${baseId}.meta`, {
           type: "state",
-          common: { name: "meta", type: "string", role: "json", read: true, write: true },
+          common: {
+            name: this.translate("meta"),
+            type: "string",
+            role: "json",
+            read: true,
+            write: true,
+          },
           native: {},
         });
-        this.log.debug(`Pre-created endpoint channel ${baseId}`);
+        this.log.debug(
+          this.translate("Pre-created endpoint channel %s", baseId)
+        );
         this.subscribeStates(`${baseId}.value`);
+        this.subscribeStates(`${baseId}.meta`);
       }
 
       for (const key of new Set(this.archiveKeys)) {
@@ -368,17 +448,35 @@ class GiraEndpointAdapter extends utils.Adapter {
         });
         await this.setObjectNotExistsAsync(`${baseId}.meta`, {
           type: "state",
-          common: { name: "meta", type: "string", role: "json", read: true, write: true },
+          common: {
+            name: this.translate("meta"),
+            type: "string",
+            role: "json",
+            read: true,
+            write: true,
+          },
           native: {},
         });
         await this.setObjectNotExistsAsync(`${baseId}.query`, {
           type: "state",
-          common: { name: "query", type: "string", role: "json", read: true, write: true },
+          common: {
+            name: this.translate("query"),
+            type: "string",
+            role: "json",
+            read: true,
+            write: true,
+          },
           native: {},
         });
         await this.setObjectNotExistsAsync(`${baseId}.data`, {
           type: "state",
-          common: { name: "data", type: "string", role: "json", read: true, write: false },
+          common: {
+            name: this.translate("data"),
+            type: "string",
+            role: "json",
+            read: true,
+            write: false,
+          },
           native: {},
         });
         this.subscribeStates(`${baseId}.meta`);
@@ -399,7 +497,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (id.startsWith("CO@.")) {
           const base = id.split(".").slice(0, 2).join(".");
           if (!validBaseIds.has(base)) {
-            const msg = `Deleting stale endpoint state ${id}`;
+            const msg = this.translate("Deleting stale endpoint state %s", id);
             this.log.info(msg);
             this.notifyAdmin(msg);
             await this.delObjectAsync(id, { recursive: true });
@@ -407,25 +505,31 @@ class GiraEndpointAdapter extends utils.Adapter {
         } else if (id.startsWith("DA@.")) {
           const base = id.split(".").slice(0, 2).join(".");
           if (!validArchiveBases.has(base)) {
-            const msg = `Deleting stale data archive state ${id}`;
+            const msg = this.translate(
+              "Deleting stale data archive state %s",
+              id
+            );
             this.log.info(msg);
             this.notifyAdmin(msg);
             await this.delObjectAsync(id, { recursive: true });
           }
         } else if (id.startsWith("info.subscriptions")) {
-          const msg = `Deleting legacy subscription state ${id}`;
+          const msg = this.translate(
+            "Deleting legacy subscription state %s",
+            id
+          );
           this.log.info(msg);
           this.notifyAdmin(msg);
           await this.delObjectAsync(id, { recursive: true });
         } else if (id.startsWith("objekte.")) {
-          const msg = `Deleting legacy object ${id}`;
+          const msg = this.translate("Deleting legacy object %s", id);
           this.log.info(msg);
           this.notifyAdmin(msg);
           await this.delObjectAsync(id, { recursive: true });
         }
       }
       try {
-        const msg = 'Deleting legacy object root "objekte"';
+        const msg = this.translate('Deleting legacy object root "objekte"');
         this.log.info(msg);
         this.notifyAdmin(msg);
         await this.delObjectAsync("objekte", { recursive: true });
@@ -457,32 +561,77 @@ class GiraEndpointAdapter extends utils.Adapter {
       });
 
       this.client.on("open", () => {
-        this.log.info(`Connected to ${ssl ? "wss" : "ws"}://${host}:${port}${path}`);
+        const url = `${ssl ? "wss" : "ws"}://${host}:${port}${path}`;
+        this.log.info(this.translate("Connected to %s", url));
         this.setState("info.connection", true, true);
+        this.fetchedMeta.clear();
         if (this.endpointKeys.length) {
           this.pendingSubscriptions = new Set(
             this.endpointKeys.map((k) => this.normalizeKey(k))
           );
           this.client!.subscribe(this.endpointKeys);
         } else {
-          this.log.info("Subscribing to all endpoint events (no keys configured)");
+          this.log.info(
+            this.translate("Subscribing to all endpoint events (no keys configured)")
+          );
           this.pendingSubscriptions.clear();
           this.client!.subscribe([]);
+        }
+        for (const [key, params] of this.archiveQueryDefaults.entries()) {
+          const baseId = this.archiveKeyIdMap.get(key);
+          if (!baseId) continue;
+          const queryParams: any = {};
+          if (params.from) queryParams.from = params.from;
+          if (params.to) queryParams.to = params.to;
+          if (params.columns && params.columns.length)
+            queryParams.columns = params.columns;
+          const prom = this.client!.call(key, "get", queryParams, this.makeTag("get"));
+          if (prom) {
+            prom
+              .then((resp: any) => {
+                this.setState(`${baseId}.data`, {
+                  val: JSON.stringify(resp.data),
+                  ack: true,
+                });
+              })
+              .catch((err: any) => {
+                this.log.error(
+                  this.translate(
+                    "Get call failed for %s: %s",
+                    key,
+                    err?.message || err
+                  )
+                );
+              });
+          }
+          this.setState(`${baseId}.query`, {
+            val: JSON.stringify(queryParams),
+            ack: true,
+          });
         }
       });
 
       this.client.on("close", (info: any) => {
-        this.log.warn(`Connection closed (${info?.code || "?"}) ${info?.reason || ""}`);
+        const msg = this.translate(
+          "Connection closed (%s) %s",
+          info?.code || "?",
+          info?.reason || ""
+        );
+        this.log.warn(msg);
         this.setState("info.connection", false, true);
-        this.getStatesAsync("CO@.*.subscription").then((states: Record<string, ioBroker.State | null>) => {
-          for (const id of Object.keys(states)) {
-            this.setState(id, { val: false, ack: true });
-          }
-        }).catch(() => {/* ignore */});
+        this.getStatesAsync("CO@.*.subscription")
+          .then((states: Record<string, ioBroker.State | null>) => {
+            for (const id of Object.keys(states)) {
+              this.setState(id, { val: false, ack: true });
+            }
+          })
+          .catch(() => {
+            /* ignore */
+          });
       });
 
       this.client.on("error", (err: any) => {
-        const msg = `Client error: ${err?.message || err}`;
+        const msg = this.translate("Client error: %s", err?.message || err);
         this.log.error(msg);
         this.setState("info.lastError", String(err?.message || err), true);
         this.notifyAdmin(msg);
@@ -490,7 +639,9 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       this.client.on("event", async (payload: any) => {
         // Provide full event information for debugging
-        this.log.debug(`Received event: ${JSON.stringify(payload)}`);
+        this.log.debug(
+          this.translate("Received event: %s", JSON.stringify(payload))
+        );
         if (this.config.updateLastEvent) {
           await this.setStateAsync("info.lastEvent", {
             val: JSON.stringify(payload),
@@ -500,6 +651,12 @@ class GiraEndpointAdapter extends utils.Adapter {
 
         const data = payload?.data;
         if (!data) return;
+
+        const tag = payload?.tag;
+        if (typeof tag === "string" && tag.startsWith("meta_")) {
+          // Responses for meta calls are handled separately
+          return;
+        }
 
         if (payload.type === "unsubscribe" && Array.isArray((data as any).items)) {
           for (const item of (data as any).items) {
@@ -524,7 +681,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             await this.extendObjectAsync(subId, {
               type: "state",
               common: {
-                name: "subscription",
+                name: this.translate("subscription"),
                 type: "boolean",
                 role: "indicator",
                 read: true,
@@ -533,8 +690,21 @@ class GiraEndpointAdapter extends utils.Adapter {
               native: {},
             });
             await this.setStateAsync(subId, { val: false, ack: true });
+            const message = codeToMessage(item.code ?? payload.code ?? 0);
+            const statusText =
+              typeof this.translate === "function"
+                ? this.translate(message)
+                : message;
+            await this.setStateAsync(`${baseId}.status`, {
+              val: statusText,
+              ack: true,
+            });
             if (item.code !== undefined && item.code !== 0) {
-              const msg = `Unsubscribe failed for ${normalized} (${item.code})`;
+              const msg = this.translate(
+                "Unsubscribe failed for %s (%s)",
+                normalized,
+                item.code
+              );
               this.log.warn(msg);
               this.notifyAdmin(msg);
             }
@@ -542,7 +712,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           return;
         }
 
-        const entries: Array<{ key: string; data: any }> = [];
+        const entries: Array<{ key: string; data: any; code?: number }> = [];
 
         // Case 1: subscription result lists multiple items
         if (typeof data === "object" && Array.isArray((data as any).items)) {
@@ -568,7 +738,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             await this.extendObjectAsync(subId, {
               type: "state",
               common: {
-                name: "subscription",
+                name: this.translate("subscription"),
                 type: "boolean",
                 role: "indicator",
                 read: true,
@@ -578,12 +748,24 @@ class GiraEndpointAdapter extends utils.Adapter {
             });
             await this.setStateAsync(subId, { val: success, ack: true });
             if (!success) {
-              const msg = `Subscription failed for ${normalized}`;
+              let msg = this.translate(
+                "Subscription failed for %s",
+                normalized
+              );
+              if (item.code !== undefined) {
+                const message = codeToMessage(item.code);
+                const statusText =
+                  typeof this.translate === "function"
+                    ? this.translate(message)
+                    : message;
+                msg += ` (${item.code} ${statusText})`;
+              }
               this.log.warn(msg);
               this.notifyAdmin(msg);
+              continue;
             }
             const value = item.data ?? { value: item.value };
-            entries.push({ key, data: value });
+            entries.push({ key, data: value, code: item.code });
           }
           const pending = Array.from(this.pendingSubscriptions);
           for (const key of pending) {
@@ -600,7 +782,7 @@ class GiraEndpointAdapter extends utils.Adapter {
               await this.extendObjectAsync(subId, {
                 type: "state",
                 common: {
-                  name: "subscription",
+                  name: this.translate("subscription"),
                   type: "boolean",
                   role: "indicator",
                   read: true,
@@ -609,7 +791,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 native: {},
               });
               await this.setStateAsync(subId, { val: false, ack: true });
-              const msg = `No subscription response for ${key}`;
+              const msg = this.translate("No subscription response for %s", key);
               this.log.warn(msg);
               this.notifyAdmin(msg);
             }
@@ -617,7 +799,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           for (const key of pending) this.pendingSubscriptions.delete(key);
           // Case 2: push event with subscription key
         } else if (payload?.subscription?.key && typeof data === "object" && "value" in data) {
-          entries.push({ key: String(payload.subscription.key), data });
+          entries.push({ key: String(payload.subscription.key), data, code: payload.code });
 
           // Case 3: array of events
         } else if (Array.isArray(data)) {
@@ -626,26 +808,34 @@ class GiraEndpointAdapter extends utils.Adapter {
             const key =
               item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
             if (key === undefined) continue;
-            entries.push({ key, data: item });
+            entries.push({ key, data: item, code: item.code });
           }
           // Case 4: object containing key/uid or generic key-value pairs
         } else if (typeof data === "object") {
           if ((data as any).uid !== undefined || (data as any).key !== undefined) {
             const key = (data as any).uid !== undefined ? String((data as any).uid) : String((data as any).key);
             const value = (data as any).data ?? { value: (data as any).value };
-            entries.push({ key, data: value });
+            entries.push({ key, data: value, code: (data as any).code });
           } else {
             for (const [key, val] of Object.entries(data)) {
+              if (!key.includes("@")) {
+                this.log.debug(
+                  this.translate("Ignoring property %s without @", key)
+                );
+                continue;
+              }
               const obj = typeof val === "object" && val !== null ? val : { value: val };
-              entries.push({ key, data: obj });
+              entries.push({ key, data: obj, code: (val as any)?.code });
             }
           }
         }
 
-        for (const { key, data } of entries) {
+        for (const { key, data, code } of entries) {
           const normalized = this.normalizeKey(key);
           if (this.skipInitialUpdate.has(normalized)) {
-            this.log.debug(`Skipping initial update for ${normalized}`);
+            this.log.debug(
+              this.translate("Skipping initial update for %s", normalized)
+            );
             this.skipInitialUpdate.delete(normalized);
             continue;
           }
@@ -661,7 +851,11 @@ class GiraEndpointAdapter extends utils.Adapter {
             (pending === value || pending == (value as any))
           ) {
             this.log.debug(
-              `Ignoring echoed event for ${normalized} -> ${JSON.stringify(value)}`
+              this.translate(
+                "Ignoring echoed event for %s -> %s",
+                normalized,
+                JSON.stringify(value)
+              )
             );
             this.pendingUpdates.delete(normalized);
             continue;
@@ -678,6 +872,77 @@ class GiraEndpointAdapter extends utils.Adapter {
             type: "channel",
             common: { name },
             native: {},
+          });
+
+          // Ensure standard states exist for dynamically discovered keys
+          const subId = `${baseId}.subscription`;
+          await this.extendObjectAsync(subId, {
+            type: "state",
+            common: {
+              name: this.translate("subscription"),
+              type: "boolean",
+              role: "indicator",
+              read: true,
+              write: false,
+            },
+            native: {},
+          });
+          const success = code === undefined || code === 0;
+          await this.setStateAsync(subId, { val: success, ack: true });
+          if (!success) {
+            let msg = this.translate(
+              "Subscription failed for %s",
+              normalized
+            );
+            if (code !== undefined) {
+              const message = codeToMessage(code);
+              const statusText =
+                typeof this.translate === "function"
+                  ? this.translate(message)
+                  : message;
+              msg += ` (${code} ${statusText})`;
+            }
+            this.log.warn(msg);
+            this.notifyAdmin(msg);
+          }
+          await this.extendObjectAsync(`${baseId}.status`, {
+            type: "state",
+            common: {
+              name: this.translate("status"),
+              type: "string",
+              role: "state",
+              read: true,
+              write: false,
+            },
+            native: {},
+          });
+          await this.extendObjectAsync(`${baseId}.meta`, {
+            type: "state",
+            common: {
+              name: this.translate("meta"),
+              type: "string",
+              role: "json",
+              read: true,
+              write: true,
+            },
+            native: {},
+          });
+          this.subscribeStates(`${baseId}.value`);
+          this.subscribeStates(`${baseId}.meta`);
+
+          if (!this.fetchedMeta.has(normalized)) {
+            this.fetchedMeta.add(normalized);
+            this.fetchMeta(normalized, baseId);
+          }
+
+          const message = codeToMessage(code ?? payload.code ?? 0);
+          const statusText =
+            typeof this.translate === "function"
+              ? this.translate(message)
+              : message;
+          await this.setStateAsync(`${baseId}.status`, {
+            val: statusText,
+            ack: true,
           });
 
           for (const [prop, raw] of Object.entries(data)) {
@@ -706,14 +971,24 @@ class GiraEndpointAdapter extends utils.Adapter {
               native: {},
             });
             if (isValue) this.subscribeStates(propId);
-            this.log.debug(`Updating state ${propId} -> ${JSON.stringify(val)}`);
+            this.log.debug(
+              this.translate(
+                "Updating state %s -> %s",
+                propId,
+                JSON.stringify(val)
+              )
+            );
             await this.setStateAsync(propId, { val, ack: true });
             if (isValue) {
               const mappedForeign = this.reverseMap.get(normalized);
               if (mappedForeign) {
                 let mappedVal = decodeAckValue(val, mappedForeign.bool).value;
                 this.log.debug(
-                  `Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`
+                  this.translate(
+                    "Updating mapped foreign state %s -> %s",
+                    mappedForeign.stateId,
+                    JSON.stringify(mappedVal)
+                  )
                 );
                 this.suppressStateChange.add(mappedForeign.stateId);
                 await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
@@ -729,7 +1004,9 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       this.client.connect();
     } catch (e: any) {
-      this.log.error(`onReady failed: ${e?.message || e}`);
+      this.log.error(
+        this.translate("onReady failed: %s", e?.message || e)
+      );
     }
   }
 
@@ -755,9 +1032,57 @@ class GiraEndpointAdapter extends utils.Adapter {
     return s.replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
   }
 
+  private makeTag(prefix: string): string {
+    return `${prefix}_${randomUUID()}`;
+  }
+
+  private async applyMeta(
+    key: string,
+    baseId: string,
+    meta: any,
+    archive = false
+  ): Promise<void> {
+    if (!meta || typeof meta !== "object") return;
+    const name = meta.desc || meta.name || meta.label;
+    if (!name) return;
+    if (archive) {
+      this.archiveDescMap.set(key, name);
+    } else {
+      this.keyDescMap.set(key, name);
+    }
+    await this.extendObjectAsync(baseId, {
+      type: "channel",
+      common: { name },
+      native: {},
+    });
+  }
+
+  private async fetchMeta(key: string, baseId: string): Promise<void> {
+    if (!this.client) return;
+    try {
+      const metaResp = await this.client.call(
+        key,
+        "meta",
+        undefined,
+        this.makeTag("meta")
+      );
+      if (metaResp?.data !== undefined) {
+        await this.applyMeta(key, baseId, metaResp.data);
+        await this.setStateAsync(`${baseId}.meta`, {
+          val: JSON.stringify(metaResp.data),
+          ack: true,
+        });
+      }
+    } catch (err: any) {
+      this.log.error(
+        this.translate("Meta call failed for %s: %s", key, err?.message || err)
+      );
+    }
+  }
+
   private async onUnload(callback: () => void): Promise<void> {
     try {
-      this.log.info("Shutting down...");
+      this.log.info(this.translate("Shutting down..."));
       this.client?.removeAllListeners();
       if (this.client) {
         try {
@@ -767,12 +1092,14 @@ class GiraEndpointAdapter extends utils.Adapter {
             await this.setStateAsync(id, { val: false, ack: true });
           }
         } catch (err) {
-          this.log.error(`Unsubscribe failed: ${err}`);
+          this.log.error(
+            this.translate("Unsubscribe failed: %s", err)
+          );
         }
         this.client.close();
       }
     } catch (e) {
-      this.log.error(`onUnload error: ${e}`);
+      this.log.error(this.translate("onUnload error: %s", e));
     } finally {
       callback();
     }
@@ -781,10 +1108,21 @@ class GiraEndpointAdapter extends utils.Adapter {
   private onStateChange(id: string, state: ioBroker.State | null | undefined): void {
     if (!state || !this.client) return;
 
+    // In case we receive a fully qualified id (e.g. from setForeignState),
+    // strip the adapter namespace so further processing works as expected.
+    if (id.startsWith(this.namespace + ".")) {
+      id = id.substring(this.namespace.length + 1);
+    }
+
     const mapped = this.forwardMap.get(id);
     if (mapped) {
       if (this.suppressStateChange.has(id)) {
-        this.log.debug(`Ignoring state change for ${id} because it was just updated from endpoint`);
+        this.log.debug(
+          this.translate(
+            "Ignoring state change for %s because it was just updated from endpoint",
+            id
+          )
+        );
         return;
       }
       const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool);
@@ -816,14 +1154,24 @@ class GiraEndpointAdapter extends utils.Adapter {
       const key = this.archiveIdKeyMap.get(baseId);
       if (!key || !action) return;
       if (action === "meta") {
-        const prom = this.client.call(key, "meta", undefined, `meta_${Date.now()}`);
+        const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
         if (prom) {
           prom
-            .then((resp: any) => {
-              this.setState(id, { val: JSON.stringify(resp.data), ack: true });
+            .then(async (resp: any) => {
+              await this.applyMeta(key, baseId, resp.data, true);
+              await this.setStateAsync(id, {
+                val: JSON.stringify(resp.data),
+                ack: true,
+              });
             })
             .catch((err: any) => {
-              this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
+              this.log.error(
+                this.translate(
+                  "Meta call failed for %s: %s",
+                  key,
+                  err?.message || err
+                )
+              );
             });
         }
       } else if (action === "query") {
@@ -833,10 +1181,12 @@ class GiraEndpointAdapter extends utils.Adapter {
             typeof state.val === "string" ? JSON.parse(state.val) : state.val;
           if (!params || typeof params !== "object") throw new Error();
         } catch {
-          this.log.warn(`Invalid query parameters for ${id}: ${state.val}`);
+          this.log.warn(
+            this.translate("Invalid query parameters for %s: %s", id, state.val)
+          );
           return;
         }
-        const prom = this.client.call(key, "get", params, `get_${Date.now()}`);
+        const prom = this.client.call(key, "get", params, this.makeTag("get"));
         if (prom) {
           prom
             .then((resp: any) => {
@@ -847,11 +1197,53 @@ class GiraEndpointAdapter extends utils.Adapter {
               });
             })
             .catch((err: any) => {
-              this.log.error(`Get call failed for ${key}: ${err?.message || err}`);
+              this.log.error(
+                this.translate(
+                  "Get call failed for %s: %s",
+                  key,
+                  err?.message || err
+                )
+              );
             });
         }
       }
       return;
+    }
+
+    if (id.startsWith("CO@.")) {
+      const parts = id.split(".");
+      const action = parts.pop();
+      if (action === "meta") {
+        if (state.ack) return;
+        const baseId = parts.join(".");
+        const key =
+          this.idKeyMap.get(baseId) ??
+          this.normalizeKey(parts.slice(1).join("."));
+        if (!key) return;
+        if (action === "meta") {
+          const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
+          if (prom) {
+            prom
+              .then(async (resp: any) => {
+                await this.applyMeta(key, baseId, resp.data);
+                await this.setStateAsync(id, {
+                  val: JSON.stringify(resp.data),
+                  ack: true,
+                });
+              })
+              .catch((err: any) => {
+                this.log.error(
+                  this.translate(
+                    "Meta call failed for %s: %s",
+                    key,
+                    err?.message || err
+                  )
+                );
+              });
+          }
+          return;
+        }
+      }
     }
 
     if (state.ack) return;
@@ -859,7 +1251,9 @@ class GiraEndpointAdapter extends utils.Adapter {
     const parts = id.split(".");
     if (parts[parts.length - 1] !== "value") return;
     const baseId = parts.slice(0, parts.length - 1).join(".");
-    const key = this.idKeyMap.get(baseId) ?? this.normalizeKey(parts[1]);
+    const key =
+      this.idKeyMap.get(baseId) ??
+      this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
     const boolKey = this.boolKeys.has(key);
     const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey);
     this.client.call(key, method, uidValue);

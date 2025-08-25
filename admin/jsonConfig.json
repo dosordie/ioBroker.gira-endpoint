@@ -12,8 +12,8 @@
         },
         "host": {
           "type": "text",
-          "label": "Host",
-          "placeholder": "192.168.x.y",
+          "label": "Gira Server",
+          "placeholder": "IP or FQDN",
           "xs": 12,
           "sm": 6,
           "md": 6,
@@ -40,7 +40,7 @@
           "lg": 4,
           "xl": 4
         },
-        "authHeader": {
+        "authHeaderHeader": {
           "type": "header",
           "text": "Authentifizierung",
           "size": 2
@@ -57,6 +57,16 @@
         "password": {
           "type": "password",
           "label": "Passwort",
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 4,
+          "xl": 4
+        },
+        "authHeader": {
+          "type": "checkbox",
+          "label": "Auth-Header verwenden",
+          "default": false,
           "xs": 12,
           "sm": 6,
           "md": 6,
@@ -260,6 +270,21 @@
               "type": "text",
               "attr": "name",
               "label": "Beschreibung"
+            },
+            {
+              "type": "text",
+              "attr": "start",
+              "label": "Startzeit"
+            },
+            {
+              "type": "text",
+              "attr": "end",
+              "label": "Endzeit"
+            },
+            {
+              "type": "text",
+              "attr": "columns",
+              "label": "Spalten"
             }
           ]
         }
