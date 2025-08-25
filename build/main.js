@@ -696,7 +696,13 @@ class GiraEndpointAdapter extends utils.Adapter {
                         },
                         native: {},
                     });
-                    await this.setStateAsync(subId, { val: true, ack: true });
+                    const success = code === undefined || code === 0;
+                    await this.setStateAsync(subId, { val: success, ack: true });
+                    if (!success) {
+                        const msg = `Subscription failed for ${normalized}${code !== undefined ? ` (${code})` : ""}`;
+                        this.log.warn(msg);
+                        this.notifyAdmin(msg);
+                    }
                     await this.extendObjectAsync(`${baseId}.status`, {
                         type: "state",
                         common: { name: "status", type: "string", role: "state", read: true, write: false },
