@@ -346,7 +346,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         await this.setStateAsync(`${baseId}.subscription`, { val: false, ack: true });
         await this.setObjectNotExistsAsync(`${baseId}.status`, {
           type: "state",
-          common: { name: "status", type: "string", role: "state", read: true, write: true },
+          common: { name: "status", type: "string", role: "state", read: true, write: false },
           native: {},
         });
         await this.setObjectNotExistsAsync(`${baseId}.meta`, {
@@ -357,7 +357,6 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.log.debug(`Pre-created endpoint channel ${baseId}`);
         this.subscribeStates(`${baseId}.value`);
         this.subscribeStates(`${baseId}.meta`);
-        this.subscribeStates(`${baseId}.status`);
       }
 
       for (const key of new Set(this.archiveKeys)) {
@@ -507,11 +506,8 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (!data) return;
 
         const tag = payload?.tag;
-        if (
-          typeof tag === "string" &&
-          (tag.startsWith("meta_") || tag.startsWith("status_"))
-        ) {
-          // Responses for meta/status calls are handled separately
+        if (typeof tag === "string" && tag.startsWith("meta_")) {
+          // Responses for meta calls are handled separately
           return;
         }
 
@@ -716,7 +712,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           await this.setStateAsync(subId, { val: true, ack: true });
           await this.extendObjectAsync(`${baseId}.status`, {
             type: "state",
-            common: { name: "status", type: "string", role: "state", read: true, write: true },
+            common: { name: "status", type: "string", role: "state", read: true, write: false },
             native: {},
           });
           await this.extendObjectAsync(`${baseId}.meta`, {
@@ -726,11 +722,10 @@ class GiraEndpointAdapter extends utils.Adapter {
           });
           this.subscribeStates(`${baseId}.value`);
           this.subscribeStates(`${baseId}.meta`);
-          this.subscribeStates(`${baseId}.status`);
 
           if (!this.fetchedMeta.has(normalized)) {
             this.fetchedMeta.add(normalized);
-            this.fetchMetaStatus(normalized, baseId);
+            this.fetchMeta(normalized, baseId);
           }
 
           const statusText = codeToMessage(code ?? payload.code ?? 0);
@@ -836,7 +831,7 @@ class GiraEndpointAdapter extends utils.Adapter {
     });
   }
 
-  private async fetchMetaStatus(key: string, baseId: string): Promise<void> {
+  private async fetchMeta(key: string, baseId: string): Promise<void> {
     if (!this.client) return;
     try {
       const metaResp = await this.client.call(
@@ -854,23 +849,6 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
     } catch (err: any) {
       this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
-    }
-    try {
-      const statusResp = await this.client.call(
-        key,
-        "status",
-        undefined,
-        this.makeTag("status")
-      );
-      const text = codeToMessage(statusResp?.code ?? 0);
-      await this.setStateAsync(`${baseId}.status`, { val: text, ack: true });
-    } catch (err: any) {
-      const code = typeof err?.code === "number" ? err.code : undefined;
-      if (code !== undefined) {
-        const text = codeToMessage(code);
-        await this.setStateAsync(`${baseId}.status`, { val: text, ack: true });
-      }
-      this.log.error(`Status call failed for ${key}: ${err?.message || err}`);
     }
   }
 
@@ -986,7 +964,7 @@ class GiraEndpointAdapter extends utils.Adapter {
     if (id.startsWith("CO@.")) {
       const parts = id.split(".");
       const action = parts.pop();
-      if (action === "meta" || action === "status") {
+      if (action === "meta") {
         if (state.ack) return;
         const baseId = parts.join(".");
         const key =
@@ -1008,25 +986,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.log.error(`Meta call failed for ${key}: ${err?.message || err}`);
               });
           }
-        } else if (action === "status") {
-          const prom = this.client.call(key, "status", undefined, this.makeTag("status"));
-          if (prom) {
-            prom
-              .then((resp: any) => {
-                const text = codeToMessage(resp?.code ?? 0);
-                this.setState(id, { val: text, ack: true });
-              })
-              .catch((err: any) => {
-                const code = typeof err?.code === "number" ? err.code : undefined;
-                if (code !== undefined) {
-                  const text = codeToMessage(code);
-                  this.setState(id, { val: text, ack: true });
-                }
-                this.log.error(`Status call failed for ${key}: ${err?.message || err}`);
-              });
-          }
+          return;
         }
-        return;
       }
     }
 
