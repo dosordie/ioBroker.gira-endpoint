@@ -270,6 +270,21 @@
               "type": "text",
               "attr": "name",
               "label": "Beschreibung"
+            },
+            {
+              "type": "text",
+              "attr": "start",
+              "label": "Startzeit"
+            },
+            {
+              "type": "text",
+              "attr": "end",
+              "label": "Endzeit"
+            },
+            {
+              "type": "text",
+              "attr": "columns",
+              "label": "Spalten"
             }
           ]
         }

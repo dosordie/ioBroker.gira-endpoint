@@ -138,6 +138,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.archiveKeyIdMap = new Map();
         this.archiveIdKeyMap = new Map();
         this.archiveDescMap = new Map();
+        this.archiveQueryDefaults = new Map();
         this.fetchedMeta = new Set();
         const origTranslate = this.translate;
         this.translate = (text, ...args) => {
@@ -285,6 +286,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.reverseMap = reverseMap;
             this.boolKeys = boolKeys;
             this.skipInitialUpdate = skipInitial;
+            this.archiveQueryDefaults.clear();
             const rawArchives = cfg.dataArchives;
             const archiveKeys = [];
             if (Array.isArray(rawArchives)) {
@@ -296,6 +298,25 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const name = String(a.name ?? "").trim();
                         if (name)
                             this.archiveDescMap.set(key, name);
+                        const start = String(a.start ?? "").trim();
+                        const end = String(a.end ?? "").trim();
+                        let cols = a.columns;
+                        if (typeof cols === "string") {
+                            cols = cols
+                                .split(/[,;\s]+/)
+                                .map((c) => c.trim())
+                                .filter((c) => c);
+                        }
+                        const params = {};
+                        if (start)
+                            params.from = start;
+                        if (end)
+                            params.to = end;
+                        if (Array.isArray(cols) && cols.length)
+                            params.columns = cols;
+                        if (Object.keys(params).length) {
+                            this.archiveQueryDefaults.set(key, params);
+                        }
                         archiveKeys.push(key);
                     }
                     else {
@@ -532,6 +553,35 @@ class GiraEndpointAdapter extends utils.Adapter {
                     this.log.info(this.translate("Subscribing to all endpoint events (no keys configured)"));
                     this.pendingSubscriptions.clear();
                     this.client.subscribe([]);
+                }
+                for (const [key, params] of this.archiveQueryDefaults.entries()) {
+                    const baseId = this.archiveKeyIdMap.get(key);
+                    if (!baseId)
+                        continue;
+                    const queryParams = {};
+                    if (params.from)
+                        queryParams.from = params.from;
+                    if (params.to)
+                        queryParams.to = params.to;
+                    if (params.columns && params.columns.length)
+                        queryParams.columns = params.columns;
+                    const prom = this.client.call(key, "get", queryParams, this.makeTag("get"));
+                    if (prom) {
+                        prom
+                            .then((resp) => {
+                            this.setState(`${baseId}.data`, {
+                                val: JSON.stringify(resp.data),
+                                ack: true,
+                            });
+                        })
+                            .catch((err) => {
+                            this.log.error(this.translate("Get call failed for %s: %s", key, err?.message || err));
+                        });
+                    }
+                    this.setState(`${baseId}.query`, {
+                        val: JSON.stringify(queryParams),
+                        ack: true,
+                    });
                 }
             });
             this.client.on("close", (info) => {
