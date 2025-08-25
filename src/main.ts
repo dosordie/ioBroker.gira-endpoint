@@ -543,9 +543,11 @@ class GiraEndpointAdapter extends utils.Adapter {
               native: {},
             });
             await this.setStateAsync(subId, { val: false, ack: true });
-            const statusText = this.translate(
-              codeToMessage(item.code ?? payload.code ?? 0)
-            );
+            const message = codeToMessage(item.code ?? payload.code ?? 0);
+            const statusText =
+              typeof this.translate === "function"
+                ? this.translate(message)
+                : message;
             await this.setStateAsync(`${baseId}.status`, {
               val: statusText,
               ack: true,
@@ -739,9 +741,11 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.fetchMeta(normalized, baseId);
           }
 
-          const statusText = this.translate(
-            codeToMessage(code ?? payload.code ?? 0)
-          );
+          const message = codeToMessage(code ?? payload.code ?? 0);
+          const statusText =
+            typeof this.translate === "function"
+              ? this.translate(message)
+              : message;
           await this.setStateAsync(`${baseId}.status`, {
             val: statusText,
             ack: true,
