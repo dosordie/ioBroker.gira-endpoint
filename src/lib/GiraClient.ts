@@ -8,7 +8,7 @@ const BACKOFF_FACTOR = 1.7;
 const BACKOFF_JITTER = 0.2;
 
 const STATUS_CODE_MESSAGES: Record<number, string> = {
-  0: "Alles in Ordnung.",
+  0: "Ok",
   400: "Ungültige Anfrage (Forbidden).",
   403: "Zugriff verweigert (Bad Request).",
   404: "Das angefragte HS-Objekt existiert in dem aufgerufenen Kontext nicht.",

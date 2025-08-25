@@ -31,7 +31,7 @@
   "Liste der Homeserver Datenarchiv IDs die abgerufen werden": "Liste der Homeserver Datenarchiv IDs die abgerufen werden",
   "Hier die Datenarchiv IDs ohne das DA@ eintragen": "Hier die Datenarchiv IDs ohne das DA@ eintragen",
   "DA@": "DA@",
-  "Alles in Ordnung.": "Alles in Ordnung.",
+  "Ok": "Ok",
   "Ungültige Anfrage (Forbidden).": "Ungültige Anfrage (Forbidden).",
   "Zugriff verweigert (Bad Request).": "Zugriff verweigert (Bad Request).",
   "Das angefragte HS-Objekt existiert in dem aufgerufenen Kontext nicht.": "Das angefragte HS-Objekt existiert in dem aufgerufenen Kontext nicht.",
