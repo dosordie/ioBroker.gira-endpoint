@@ -141,6 +141,9 @@
         "endpointKeys": {
           "type": "table",
           "label": "Hier die Endpunkt IDs ohne das CO@ eintragen",
+          "style": {
+            "fontSize": "0.8rem"
+          },
           "xs": 12,
           "sm": 12,
           "md": 12,
@@ -185,6 +188,9 @@
         "mappings": {
           "type": "table",
           "label": "Hier die Endpunkt IDs und ioBroker Objekte eintragen",
+          "style": {
+            "fontSize": "0.8rem"
+          },
           "xs": 12,
           "sm": 12,
           "md": 12,
@@ -246,6 +252,9 @@
         "dataArchives": {
           "type": "table",
           "label": "Hier die Datenarchiv IDs ohne das DA@ eintragen",
+          "style": {
+            "fontSize": "0.8rem"
+          },
           "xs": 12,
           "sm": 12,
           "md": 12,
