@@ -1,5 +1,6 @@
 {
   "type": "tabs",
+  "style": { "fontSize": "14px" },
   "items": {
     "settingsTab": {
       "type": "panel",
@@ -185,21 +186,21 @@
           "text": "Liste der Homeserver Endpunkt IDs die abonniert werden und zusätzlich in einen anderes ioBroker Objekt geschrieben / von dort gelesen werden",
           "size": 2
         },
-        "mappingGroups": {
-          "type": "accordion",
-          "label": "Hier die Endpunkt IDs und ioBroker Objekte eintragen",
-          "titleAttr": "group",
-          "items": [
-            {
-              "type": "text",
-              "attr": "group",
-              "label": "Gruppe",
-              "xs": 12,
-              "sm": 12,
-              "md": 6,
-              "lg": 6,
-              "xl": 6
-            },
+          "mappingGroups": {
+            "type": "accordion",
+            "label": "Hier Gruppen erstellen und die Endpunkt IDs und ioBroker Objekte eintragen",
+            "titleAttr": "group",
+            "items": [
+              {
+                "type": "text",
+                "attr": "group",
+                "label": "Gruppenname",
+                "xs": 12,
+                "sm": 12,
+                "md": 6,
+                "lg": 6,
+                "xl": 6
+              },
             {
               "newLine": true,
               "type": "accordion",
