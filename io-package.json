@@ -1,12 +1,8 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.2.4",
+    "version": "0.2.3",
     "news": {
-      "0.2.4": {
-        "en": "Use accordion for mapping endpoints in admin UI",
-        "de": "Mapping-Endpunkte in der Admin-Oberfläche als Akkordeon umgesetzt"
-      },
       "0.2.3": {
         "en": "Align CO@ endpoint structure with DA@ and move subscription status into each endpoint",
         "de": "CO@ Ordnerstruktur an DA@ angeglichen und Abo-Status in den jeweiligen Endpunkt verschoben"
