@@ -140,10 +140,11 @@
           "size": 2
         },
         "endpointKeys": {
-          "type": "table",
+          "type": "accordion",
           "label": "Hier die Endpunkt IDs ohne das CO@ eintragen",
+          "titleAttr": "key",
           "style": {
-            "fontSize": "0.8rem"
+            "fontSize": "0.7rem"
           },
           "xs": 12,
           "sm": 12,
@@ -154,24 +155,44 @@
             {
               "type": "text",
               "attr": "key",
-              "label": "CO@"
+              "label": "CO@",
+              "xs": 12,
+              "sm": 12,
+              "md": 6,
+              "lg": 6,
+              "xl": 6
             },
             {
               "type": "text",
               "attr": "name",
-              "label": "Beschreibung"
+              "label": "Beschreibung",
+              "xs": 12,
+              "sm": 12,
+              "md": 6,
+              "lg": 6,
+              "xl": 6
             },
             {
               "type": "checkbox",
               "attr": "bool",
               "label": "0/1 ↔ true/false",
-              "default": false
+              "default": false,
+              "xs": 12,
+              "sm": 6,
+              "md": 4,
+              "lg": 4,
+              "xl": 4
             },
             {
               "type": "checkbox",
               "attr": "updateOnStart",
               "label": "Beim Start aktualisieren",
-              "default": true
+              "default": true,
+              "xs": 12,
+              "sm": 6,
+              "md": 4,
+              "lg": 4,
+              "xl": 4
             }
           ]
         }
@@ -300,7 +321,7 @@
           "type": "table",
           "label": "Hier die Datenarchiv IDs ohne das DA@ eintragen",
           "style": {
-            "fontSize": "0.8rem"
+            "fontSize": "0.7rem"
           },
           "xs": 12,
           "sm": 12,
