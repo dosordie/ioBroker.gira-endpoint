@@ -22,6 +22,15 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     | string[]
     | { key: string; name?: string; bool?: boolean; updateOnStart?: boolean }[]
     | string;
+  endpointGroups?: {
+    group?: string;
+    keys: {
+      key: string;
+      name?: string;
+      bool?: boolean;
+      updateOnStart?: boolean;
+    }[];
+  }[];
   updateLastEvent?: boolean;
   mappings?: {
     stateId: string;
@@ -239,7 +248,11 @@ class GiraEndpointAdapter extends utils.Adapter {
       const boolKeys = new Set<string>();
       const skipInitial = new Set<string>();
 
-      const rawKeys = cfg.endpointKeys;
+      const rawKeys = Array.isArray(cfg.endpointGroups)
+        ? cfg.endpointGroups.flatMap((g: any) =>
+            Array.isArray(g?.keys) ? g.keys : []
+          )
+        : cfg.endpointKeys;
       const endpointKeys: string[] = [];
       if (Array.isArray(rawKeys)) {
         for (const k of rawKeys) {

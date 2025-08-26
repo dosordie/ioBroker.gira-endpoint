@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.2.5",
+    "version": "0.2.6",
     "news": {
+      "0.2.6": {
+        "en": "Group simple endpoints in accordion",
+        "de": "Einfache Endpunkte in Gruppen innerhalb eines Akkordeons zusammenfassen"
+      },
       "0.2.5": {
         "en": "Group mapping endpoints in accordion",
         "de": "Mapping-Endpunkte in Gruppen innerhalb eines Akkordeons zusammenfassen"
