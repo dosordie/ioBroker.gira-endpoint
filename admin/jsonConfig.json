@@ -185,56 +185,102 @@
           "text": "Liste der Homeserver Endpunkt IDs die abonniert werden und zusätzlich in einen anderes ioBroker Objekt geschrieben / von dort gelesen werden",
           "size": 2
         },
-        "mappings": {
-          "type": "table",
+        "mappingGroups": {
+          "type": "accordion",
           "label": "Hier die Endpunkt IDs und ioBroker Objekte eintragen",
-          "style": {
-            "fontSize": "0.8rem"
-          },
-          "xs": 12,
-          "sm": 12,
-          "md": 12,
-          "lg": 12,
-          "xl": 12,
+          "titleAttr": "group",
           "items": [
             {
               "type": "text",
-              "attr": "stateId",
-              "label": "State ID"
+              "attr": "group",
+              "label": "Gruppe",
+              "xs": 12,
+              "sm": 12,
+              "md": 6,
+              "lg": 6,
+              "xl": 6
             },
             {
-              "type": "text",
-              "attr": "key",
-              "label": "CO@"
-            },
-            {
-              "type": "text",
-              "attr": "name",
-              "label": "Beschreibung"
-            },
-            {
-              "type": "checkbox",
-              "attr": "toEndpoint",
-              "label": "ioBroker → Endpunkt",
-              "default": true
-            },
-            {
-              "type": "checkbox",
-              "attr": "toState",
-              "label": "Endpunkt → ioBroker",
-              "default": false
-            },
-            {
-              "type": "checkbox",
-              "attr": "bool",
-              "label": "0/1 ↔ true/false",
-              "default": false
-            },
-            {
-              "type": "checkbox",
-              "attr": "updateOnStart",
-              "label": "Beim Start aktualisieren",
-              "default": true
+              "newLine": true,
+              "type": "accordion",
+              "attr": "mappings",
+              "titleAttr": "key",
+              "items": [
+                {
+                  "type": "text",
+                  "attr": "stateId",
+                  "label": "State ID",
+                  "xs": 12,
+                  "sm": 12,
+                  "md": 6,
+                  "lg": 6,
+                  "xl": 6
+                },
+                {
+                  "type": "text",
+                  "attr": "key",
+                  "label": "CO@",
+                  "xs": 12,
+                  "sm": 12,
+                  "md": 6,
+                  "lg": 6,
+                  "xl": 6
+                },
+                {
+                  "type": "text",
+                  "attr": "name",
+                  "label": "Beschreibung",
+                  "xs": 12,
+                  "sm": 12,
+                  "md": 6,
+                  "lg": 6,
+                  "xl": 6
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "toEndpoint",
+                  "label": "ioBroker → Endpunkt",
+                  "default": true,
+                  "xs": 12,
+                  "sm": 6,
+                  "md": 4,
+                  "lg": 4,
+                  "xl": 4
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "toState",
+                  "label": "Endpunkt → ioBroker",
+                  "default": false,
+                  "xs": 12,
+                  "sm": 6,
+                  "md": 4,
+                  "lg": 4,
+                  "xl": 4
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "bool",
+                  "label": "0/1 ↔ true/false",
+                  "default": false,
+                  "xs": 12,
+                  "sm": 6,
+                  "md": 4,
+                  "lg": 4,
+                  "xl": 4
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "updateOnStart",
+                  "label": "Beim Start aktualisieren",
+                  "default": true,
+                  "xs": 12,
+                  "sm": 6,
+                  "md": 4,
+                  "lg": 4,
+                  "xl": 4
+                }
+              ]
             }
           ]
         }
