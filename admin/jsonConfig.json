@@ -1,6 +1,5 @@
 {
   "type": "tabs",
-  "style": { "fontSize": "14px" },
   "items": {
     "settingsTab": {
       "type": "panel",
@@ -159,9 +158,6 @@
               "type": "accordion",
               "attr": "keys",
               "titleAttr": "key",
-              "style": {
-                "fontSize": "0.7rem"
-              },
               "items": [
                 {
                   "type": "text",
@@ -333,9 +329,6 @@
         "dataArchives": {
           "type": "table",
           "label": "Hier die Datenarchiv IDs ohne das DA@ eintragen",
-          "style": {
-            "fontSize": "0.7rem"
-          },
           "xs": 12,
           "sm": 12,
           "md": 12,
