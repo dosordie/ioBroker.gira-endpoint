@@ -214,7 +214,9 @@ class GiraEndpointAdapter extends utils.Adapter {
             const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
             const boolKeys = new Set();
             const skipInitial = new Set();
-            const rawKeys = cfg.endpointKeys;
+            const rawKeys = Array.isArray(cfg.endpointGroups)
+                ? cfg.endpointGroups.flatMap((g) => Array.isArray(g?.keys) ? g.keys : [])
+                : cfg.endpointKeys;
             const endpointKeys = [];
             if (Array.isArray(rawKeys)) {
                 for (const k of rawKeys) {
