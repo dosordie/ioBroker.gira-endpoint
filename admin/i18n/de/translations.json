@@ -87,5 +87,6 @@
   "Ignoring state change for %s because it was just updated from endpoint": "Ignoriere Zustandsänderung für %s, da sie gerade vom Endpoint aktualisiert wurde",
   "Invalid query parameters for %s: %s": "Ungültige Abfrageparameter für %s: %s",
   "Get call failed for %s: %s": "Get-Aufruf fehlgeschlagen für %s: %s",
+  "Aktiviert": "Aktiviert",
   "Auth-Header verwenden": "Auth-Header verwenden"
 }

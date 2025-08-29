@@ -20,7 +20,13 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
   rejectUnauthorized?: boolean;
   endpointKeys?:
     | string[]
-    | { key: string; name?: string; bool?: boolean; updateOnStart?: boolean }[]
+    | {
+        key: string;
+        name?: string;
+        bool?: boolean;
+        updateOnStart?: boolean;
+        enabled?: boolean;
+      }[]
     | string;
   endpointGroups?: {
     group?: string;
@@ -29,6 +35,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
       name?: string;
       bool?: boolean;
       updateOnStart?: boolean;
+      enabled?: boolean;
     }[];
   }[];
   updateLastEvent?: boolean;
@@ -40,6 +47,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     toState?: boolean;
     bool?: boolean;
     updateOnStart?: boolean;
+    enabled?: boolean;
   }[]; // legacy support
   mappingGroups?: {
     group?: string;
@@ -51,6 +59,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
       toState?: boolean;
       bool?: boolean;
       updateOnStart?: boolean;
+      enabled?: boolean;
     }[];
   }[];
   dataArchives?:
@@ -61,6 +70,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
         start?: string;
         end?: string;
         columns?: string[] | string;
+        enabled?: boolean;
       }[]
     | string;
 }
@@ -257,6 +267,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       if (Array.isArray(rawKeys)) {
         for (const k of rawKeys) {
           if (typeof k === "object" && k) {
+            if ((k as any).enabled === false) continue;
             const key = this.normalizeKey(String((k as any).key ?? "").trim());
             if (!key) continue;
             const name = String((k as any).name ?? "").trim();
@@ -294,6 +305,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (!Array.isArray(list)) continue;
         for (const m of list) {
           if (typeof m !== "object" || !m) continue;
+          if ((m as any).enabled === false) continue;
           const stateId = String((m as any).stateId ?? "").trim();
           const key = this.normalizeKey(String((m as any).key ?? "").trim());
           if (!stateId || !key) continue;
@@ -325,6 +337,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       if (Array.isArray(rawArchives)) {
         for (const a of rawArchives) {
           if (typeof a === "object" && a) {
+            if ((a as any).enabled === false) continue;
             const key = this.normalizeArchiveKey(String((a as any).key ?? "").trim());
             if (!key) continue;
             const name = String((a as any).name ?? "").trim();
