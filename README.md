@@ -25,6 +25,7 @@ Eingabewerte können sein:  true | false | toggle | String | Number
 - `String` und `Number` → werden direkt durchgereicht
 -  Bei den Mapping Endpunkten kann ein ioBroker Objekt (z.B. 0_userdata.0.mappingtest) eines anderen Adapters angegeben werden, das dann zum HS in das angegebene KO (CO@) durchgereicht wird.
    Hier kann die Richtung per Checkbos ausgewählt werden falls eine Richtung nicht bedient werden soll.
+   Mehrere Zuordnungen lassen sich in der Admin-Oberfläche in Gruppen bündeln.
 
 ## Homeserver konfigurieren
 

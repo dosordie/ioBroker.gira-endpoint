@@ -214,7 +214,9 @@ class GiraEndpointAdapter extends utils.Adapter {
             const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
             const boolKeys = new Set();
             const skipInitial = new Set();
-            const rawKeys = cfg.endpointKeys;
+            const rawKeys = Array.isArray(cfg.endpointGroups)
+                ? cfg.endpointGroups.flatMap((g) => Array.isArray(g?.keys) ? g.keys : [])
+                : cfg.endpointKeys;
             const endpointKeys = [];
             if (Array.isArray(rawKeys)) {
                 for (const k of rawKeys) {
@@ -251,8 +253,18 @@ class GiraEndpointAdapter extends utils.Adapter {
             }
             const forwardMap = new Map();
             const reverseMap = new Map();
-            if (Array.isArray(cfg.mappings)) {
-                for (const m of cfg.mappings) {
+            const mappingGroups = Array.isArray(cfg.mappingGroups)
+                ? cfg.mappingGroups
+                : Array.isArray(cfg.mappings)
+                    ? [{ mappings: cfg.mappings }]
+                    : [];
+            for (const g of mappingGroups) {
+                if (!g || typeof g !== "object")
+                    continue;
+                const list = g.mappings;
+                if (!Array.isArray(list))
+                    continue;
+                for (const m of list) {
                     if (typeof m !== "object" || !m)
                         continue;
                     const stateId = String(m.stateId ?? "").trim();

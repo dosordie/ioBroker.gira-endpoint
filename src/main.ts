@@ -22,6 +22,15 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     | string[]
     | { key: string; name?: string; bool?: boolean; updateOnStart?: boolean }[]
     | string;
+  endpointGroups?: {
+    group?: string;
+    keys: {
+      key: string;
+      name?: string;
+      bool?: boolean;
+      updateOnStart?: boolean;
+    }[];
+  }[];
   updateLastEvent?: boolean;
   mappings?: {
     stateId: string;
@@ -31,6 +40,18 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     toState?: boolean;
     bool?: boolean;
     updateOnStart?: boolean;
+  }[]; // legacy support
+  mappingGroups?: {
+    group?: string;
+    mappings: {
+      stateId: string;
+      key: string;
+      name?: string;
+      toEndpoint?: boolean;
+      toState?: boolean;
+      bool?: boolean;
+      updateOnStart?: boolean;
+    }[];
   }[];
   dataArchives?:
     | string[]
@@ -227,7 +248,11 @@ class GiraEndpointAdapter extends utils.Adapter {
       const boolKeys = new Set<string>();
       const skipInitial = new Set<string>();
 
-      const rawKeys = cfg.endpointKeys;
+      const rawKeys = Array.isArray(cfg.endpointGroups)
+        ? cfg.endpointGroups.flatMap((g: any) =>
+            Array.isArray(g?.keys) ? g.keys : []
+          )
+        : cfg.endpointKeys;
       const endpointKeys: string[] = [];
       if (Array.isArray(rawKeys)) {
         for (const k of rawKeys) {
@@ -258,8 +283,16 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       const forwardMap = new Map<string, { key: string; bool: boolean }>();
       const reverseMap = new Map<string, { stateId: string; bool: boolean }>();
-      if (Array.isArray(cfg.mappings)) {
-        for (const m of cfg.mappings) {
+      const mappingGroups = Array.isArray(cfg.mappingGroups)
+        ? cfg.mappingGroups
+        : Array.isArray(cfg.mappings)
+        ? [{ mappings: cfg.mappings }]
+        : [];
+      for (const g of mappingGroups) {
+        if (!g || typeof g !== "object") continue;
+        const list = (g as any).mappings;
+        if (!Array.isArray(list)) continue;
+        for (const m of list) {
           if (typeof m !== "object" || !m) continue;
           const stateId = String((m as any).stateId ?? "").trim();
           const key = this.normalizeKey(String((m as any).key ?? "").trim());
