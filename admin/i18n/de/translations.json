@@ -88,6 +88,5 @@
   "Invalid query parameters for %s: %s": "Ungültige Abfrageparameter für %s: %s",
   "Get call failed for %s: %s": "Get-Aufruf fehlgeschlagen für %s: %s",
   "Aktiviert": "Aktiviert",
-  "Bestätigt": "Bestätigt",
   "Auth-Header verwenden": "Auth-Header verwenden"
 }

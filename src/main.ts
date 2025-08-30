@@ -46,7 +46,6 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     toEndpoint?: boolean;
     toState?: boolean;
     bool?: boolean;
-    ack?: boolean;
     updateOnStart?: boolean;
     enabled?: boolean;
   }[]; // legacy support
@@ -59,7 +58,6 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
       toEndpoint?: boolean;
       toState?: boolean;
       bool?: boolean;
-      ack?: boolean;
       updateOnStart?: boolean;
       enabled?: boolean;
     }[];
@@ -149,7 +147,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private idKeyMap = new Map<string, string>();
   private keyDescMap = new Map<string, string>();
   private forwardMap = new Map<string, { key: string; bool: boolean }>();
-  private reverseMap = new Map<string, { stateId: string; bool: boolean; ack: boolean }>();
+  private reverseMap = new Map<string, { stateId: string; bool: boolean }>();
   private boolKeys = new Set<string>();
   private suppressStateChange = new Set<string>();
   private pendingUpdates = new Map<string, any>();
@@ -295,7 +293,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
 
       const forwardMap = new Map<string, { key: string; bool: boolean }>();
-      const reverseMap = new Map<string, { stateId: string; bool: boolean; ack: boolean }>();
+      const reverseMap = new Map<string, { stateId: string; bool: boolean }>();
       const mappingGroups = Array.isArray(cfg.mappingGroups)
         ? cfg.mappingGroups
         : Array.isArray(cfg.mappings)
@@ -316,7 +314,6 @@ class GiraEndpointAdapter extends utils.Adapter {
           const toEndpoint = (m as any).toEndpoint !== false;
           const toState = Boolean((m as any).toState);
           const bool = Boolean((m as any).bool);
-          const ack = (m as any).ack !== false;
           const updateOnStart = (m as any).updateOnStart !== false;
           if (!updateOnStart) skipInitial.add(key);
           if (toEndpoint) {
@@ -324,7 +321,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (bool) boolKeys.add(key);
           }
           if (toState) {
-            reverseMap.set(key, { stateId, bool, ack });
+            reverseMap.set(key, { stateId, bool });
             if (bool) boolKeys.add(key);
           }
           if (!endpointKeys.includes(key)) endpointKeys.push(key);
@@ -1040,10 +1037,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                   )
                 );
                 this.suppressStateChange.add(mappedForeign.stateId);
-                await this.setForeignStateAsync(mappedForeign.stateId, {
-                  val: mappedVal,
-                  ack: mappedForeign.ack,
-                });
+                await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
                 const timer = this.setTimeout(() => {
                   this.suppressStateChange.delete(mappedForeign.stateId);
                   this.clearTimeout(timer);
@@ -1316,10 +1310,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         `Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`
       );
       this.suppressStateChange.add(mappedForeign.stateId);
-      this.setForeignState(mappedForeign.stateId, {
-        val: mappedVal,
-        ack: mappedForeign.ack,
-      });
+      this.setForeignState(mappedForeign.stateId, { val: mappedVal, ack: true });
       const timer = this.setTimeout(() => {
         this.suppressStateChange.delete(mappedForeign.stateId);
         this.clearTimeout(timer);

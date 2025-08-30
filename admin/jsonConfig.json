@@ -313,17 +313,6 @@
                 },
                 {
                   "type": "checkbox",
-                  "attr": "ack",
-                  "label": "Bestätigt",
-                  "default": true,
-                  "xs": 12,
-                  "sm": 6,
-                  "md": 4,
-                  "lg": 4,
-                  "xl": 4
-                },
-                {
-                  "type": "checkbox",
                   "attr": "bool",
                   "label": "0/1 ↔ true/false",
                   "default": false,
