@@ -221,6 +221,8 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (Array.isArray(rawKeys)) {
                 for (const k of rawKeys) {
                     if (typeof k === "object" && k) {
+                        if (k.enabled === false)
+                            continue;
                         const key = this.normalizeKey(String(k.key ?? "").trim());
                         if (!key)
                             continue;
@@ -267,6 +269,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                 for (const m of list) {
                     if (typeof m !== "object" || !m)
                         continue;
+                    if (m.enabled === false)
+                        continue;
                     const stateId = String(m.stateId ?? "").trim();
                     const key = this.normalizeKey(String(m.key ?? "").trim());
                     if (!stateId || !key)
@@ -277,6 +281,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const toEndpoint = m.toEndpoint !== false;
                     const toState = Boolean(m.toState);
                     const bool = Boolean(m.bool);
+                    const ack = m.ack !== false;
                     const updateOnStart = m.updateOnStart !== false;
                     if (!updateOnStart)
                         skipInitial.add(key);
@@ -286,7 +291,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                             boolKeys.add(key);
                     }
                     if (toState) {
-                        reverseMap.set(key, { stateId, bool });
+                        reverseMap.set(key, { stateId, bool, ack });
                         if (bool)
                             boolKeys.add(key);
                     }
@@ -304,6 +309,8 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (Array.isArray(rawArchives)) {
                 for (const a of rawArchives) {
                     if (typeof a === "object" && a) {
+                        if (a.enabled === false)
+                            continue;
                         const key = this.normalizeArchiveKey(String(a.key ?? "").trim());
                         if (!key)
                             continue;
@@ -929,7 +936,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                                 let mappedVal = decodeAckValue(val, mappedForeign.bool).value;
                                 this.log.debug(this.translate("Updating mapped foreign state %s -> %s", mappedForeign.stateId, JSON.stringify(mappedVal)));
                                 this.suppressStateChange.add(mappedForeign.stateId);
-                                await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
+                                await this.setForeignStateAsync(mappedForeign.stateId, {
+                                    val: mappedVal,
+                                    ack: mappedForeign.ack,
+                                });
                                 const timer = this.setTimeout(() => {
                                     this.suppressStateChange.delete(mappedForeign.stateId);
                                     this.clearTimeout(timer);
@@ -1162,7 +1172,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
             this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
             this.suppressStateChange.add(mappedForeign.stateId);
-            this.setForeignState(mappedForeign.stateId, { val: mappedVal, ack: true });
+            this.setForeignState(mappedForeign.stateId, {
+                val: mappedVal,
+                ack: mappedForeign.ack,
+            });
             const timer = this.setTimeout(() => {
                 this.suppressStateChange.delete(mappedForeign.stateId);
                 this.clearTimeout(timer);

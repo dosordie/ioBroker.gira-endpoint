@@ -87,5 +87,7 @@
   "Ignoring state change for %s because it was just updated from endpoint": "Ignoring state change for %s because it was just updated from endpoint",
   "Invalid query parameters for %s: %s": "Invalid query parameters for %s: %s",
   "Get call failed for %s: %s": "Get call failed for %s: %s",
+  "Aktiviert": "Enabled",
+  "Bestätigt": "Confirmed",
   "Auth-Header verwenden": "Use auth header"
 }
