@@ -281,6 +281,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const toEndpoint = m.toEndpoint !== false;
                     const toState = Boolean(m.toState);
                     const bool = Boolean(m.bool);
+                    const ack = m.ack !== false;
                     const updateOnStart = m.updateOnStart !== false;
                     if (!updateOnStart)
                         skipInitial.add(key);
@@ -290,7 +291,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                             boolKeys.add(key);
                     }
                     if (toState) {
-                        reverseMap.set(key, { stateId, bool });
+                        reverseMap.set(key, { stateId, bool, ack });
                         if (bool)
                             boolKeys.add(key);
                     }
@@ -935,7 +936,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                                 let mappedVal = decodeAckValue(val, mappedForeign.bool).value;
                                 this.log.debug(this.translate("Updating mapped foreign state %s -> %s", mappedForeign.stateId, JSON.stringify(mappedVal)));
                                 this.suppressStateChange.add(mappedForeign.stateId);
-                                await this.setForeignStateAsync(mappedForeign.stateId, { val: mappedVal, ack: true });
+                                await this.setForeignStateAsync(mappedForeign.stateId, {
+                                    val: mappedVal,
+                                    ack: mappedForeign.ack,
+                                });
                                 const timer = this.setTimeout(() => {
                                     this.suppressStateChange.delete(mappedForeign.stateId);
                                     this.clearTimeout(timer);
@@ -1168,7 +1172,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
             this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
             this.suppressStateChange.add(mappedForeign.stateId);
-            this.setForeignState(mappedForeign.stateId, { val: mappedVal, ack: true });
+            this.setForeignState(mappedForeign.stateId, {
+                val: mappedVal,
+                ack: mappedForeign.ack,
+            });
             const timer = this.setTimeout(() => {
                 this.suppressStateChange.delete(mappedForeign.stateId);
                 this.clearTimeout(timer);
