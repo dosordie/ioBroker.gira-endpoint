@@ -315,7 +315,7 @@
                   "type": "checkbox",
                   "attr": "ack",
                   "label": "Bestätigt",
-                  "default": true,
+                  "default": false,
                   "xs": 12,
                   "sm": 6,
                   "md": 4,
