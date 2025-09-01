@@ -154,6 +154,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private suppressStateChange = new Set<string>();
   private pendingUpdates = new Map<string, any>();
   private skipInitialUpdate = new Set<string>();
+  private initialSkipUpdate = new Set<string>();
   private pendingSubscriptions = new Set<string>();
   private archiveKeys: string[] = [];
   private archiveKeyIdMap = new Map<string, string>();
@@ -334,6 +335,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.reverseMap = reverseMap;
       this.boolKeys = boolKeys;
       this.skipInitialUpdate = skipInitial;
+      this.initialSkipUpdate = new Set(skipInitial);
       this.archiveQueryDefaults.clear();
       const rawArchives = cfg.dataArchives;
       const archiveKeys: string[] = [];
@@ -614,6 +616,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.log.info(this.translate("Connected to %s", url));
         this.setState("info.connection", true, true);
         this.fetchedMeta.clear();
+        this.skipInitialUpdate = new Set(this.initialSkipUpdate);
         if (this.endpointKeys.length) {
           this.pendingSubscriptions = new Set(
             this.endpointKeys.map((k) => this.normalizeKey(k))
