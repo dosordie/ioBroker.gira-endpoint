@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "news": {
+      "0.2.7": {
+        "en": "Preserve skipInitialUpdate across reconnects",
+        "de": "Speichert skipInitialUpdate über Verbindungsabbrüche hinweg"
+      },
       "0.2.6": {
         "en": "Group simple endpoints in accordion",
         "de": "Einfache Endpunkte in Gruppen innerhalb eines Akkordeons zusammenfassen"
