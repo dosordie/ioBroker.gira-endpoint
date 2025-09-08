@@ -25,7 +25,7 @@
   "Liste der Homeserver Endpunkt IDs die abonniert werden und zusätzlich in einen anderes ioBroker Objekt geschrieben / von dort gelesen werden": "List of home server endpoint IDs to subscribe and additionally write to/read from other ioBroker objects",
   "Hier Gruppen erstellen und die Endpunkt IDs und ioBroker Objekte eintragen": "Create groups here and enter the endpoint IDs and ioBroker objects",
   "Gruppenname": "Group name",
-  "State ID": "State ID",
+  "Objekt": "Object",
   "ioBroker → Endpunkt": "ioBroker → Endpoint",
   "Endpunkt → ioBroker": "Endpoint → ioBroker",
   "Datenarchive": "Data archives",

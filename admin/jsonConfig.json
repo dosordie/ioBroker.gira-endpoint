@@ -249,9 +249,9 @@
               "titleAttr": "key",
               "items": [
                 {
-                  "type": "text",
+                  "type": "objectId",
                   "attr": "stateId",
-                  "label": "State ID",
+                  "label": "Objekt",
                   "xs": 12,
                   "sm": 12,
                   "md": 6,
