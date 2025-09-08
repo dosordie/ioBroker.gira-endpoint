@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.2.7",
+    "version": "0.2.8",
     "news": {
+      "0.2.8": {
+        "en": "Validate group names, show validation hints for endpoint fields, and add three-dot menu for objects in admin UI",
+        "de": "Gruppennamen validieren, Validierungshinweise für Endpunktfelder in der Admin-Oberfläche anzeigen und Drei-Punkte-Menü für Objekte hinzufügen"
+      },
       "0.2.7": {
         "en": "Preserve skipInitialUpdate across reconnects",
         "de": "Speichert skipInitialUpdate über Verbindungsabbrüche hinweg"
