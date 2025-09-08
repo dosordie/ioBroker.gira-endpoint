@@ -89,5 +89,8 @@
   "Get call failed for %s: %s": "Get-Aufruf fehlgeschlagen für %s: %s",
   "Aktiviert": "Aktiviert",
   "Bestätigt": "Bestätigt",
+  "ioBroker Objekt": "ioBroker Objekt",
+  "HomeServer Endpunkt CO@": "HomeServer Endpunkt CO@",
+  "Pflichtfeld": "Pflichtfeld",
   "Auth-Header verwenden": "Auth-Header verwenden"
 }

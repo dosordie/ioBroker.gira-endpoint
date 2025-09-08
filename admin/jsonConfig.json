@@ -167,7 +167,11 @@
                   "sm": 12,
                   "md": 6,
                   "lg": 6,
-                  "xl": 6
+                  "xl": 6,
+                  "help": "HomeServer Endpunkt CO@",
+                  "validator": "data.key.length > 0",
+                  "validatorErrorText": "Pflichtfeld",
+                  "validatorNoSaveOnError": true
                 },
                 {
                   "type": "text",
@@ -256,7 +260,11 @@
                   "sm": 12,
                   "md": 6,
                   "lg": 6,
-                  "xl": 6
+                  "xl": 6,
+                  "help": "ioBroker Objekt",
+                  "validator": "data.stateId.length > 0",
+                  "validatorErrorText": "Pflichtfeld",
+                  "validatorNoSaveOnError": true
                 },
                 {
                   "type": "text",
@@ -266,7 +274,11 @@
                   "sm": 12,
                   "md": 6,
                   "lg": 6,
-                  "xl": 6
+                  "xl": 6,
+                  "help": "HomeServer Endpunkt CO@",
+                  "validator": "data.key.length > 0",
+                  "validatorErrorText": "Pflichtfeld",
+                  "validatorNoSaveOnError": true
                 },
                 {
                   "type": "text",
