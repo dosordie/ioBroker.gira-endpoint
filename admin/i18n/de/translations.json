@@ -92,5 +92,7 @@
   "ioBroker Objekt": "ioBroker Objekt",
   "HomeServer Endpunkt CO@": "HomeServer Endpunkt CO@",
   "Pflichtfeld": "Pflichtfeld",
+  "Pflichtfeld, ohne führendes CO@": "Pflichtfeld, ohne führendes CO@",
+  "Pflichtfeld, ohne führendes DA@": "Pflichtfeld, ohne führendes DA@",
   "Auth-Header verwenden": "Auth-Header verwenden"
 }
