@@ -148,6 +148,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private keyIdMap = new Map<string, string>();
   private idKeyMap = new Map<string, string>();
   private keyDescMap = new Map<string, string>();
+  private keyCaseMap = new Map<string, string>();
   private forwardMap = new Map<string, { key: string; bool: boolean }>();
   private reverseMap = new Map<string, { stateId: string; bool: boolean; ack: boolean }>();
   private boolKeys = new Set<string>();
@@ -261,6 +262,8 @@ class GiraEndpointAdapter extends utils.Adapter {
       const boolKeys = new Set<string>();
       const skipInitial = new Set<string>();
 
+      this.keyCaseMap.clear();
+
       const rawKeys = Array.isArray(cfg.endpointGroups)
         ? cfg.endpointGroups.flatMap((g: any) =>
             Array.isArray(g?.keys) ? g.keys : []
@@ -271,8 +274,10 @@ class GiraEndpointAdapter extends utils.Adapter {
         for (const k of rawKeys) {
           if (typeof k === "object" && k) {
             if ((k as any).enabled === false) continue;
-            const key = this.normalizeKey(String((k as any).key ?? "").trim());
+            const rawKey = String((k as any).key ?? "").trim();
+            const key = this.normalizeKey(rawKey);
             if (!key) continue;
+            this.rememberKeyCase(key, rawKey || key);
             const name = String((k as any).name ?? "").trim();
             if (name) this.keyDescMap.set(key, name);
             const bool = Boolean((k as any).bool);
@@ -281,8 +286,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (!updateOnStart) skipInitial.add(key);
             endpointKeys.push(key);
           } else {
-            const key = this.normalizeKey(String(k).trim());
+            const rawKey = String(k).trim();
+            const key = this.normalizeKey(rawKey);
             if (!key) continue;
+            this.rememberKeyCase(key, rawKey || key);
             endpointKeys.push(key);
           }
         }
@@ -290,9 +297,13 @@ class GiraEndpointAdapter extends utils.Adapter {
         const arr = String(rawKeys ?? "")
           .split(/[,;\s]+/)
           .map((k) => k.trim())
-          .filter((k) => k)
-          .map((k) => this.normalizeKey(k));
-        endpointKeys.push(...arr);
+          .filter((k) => k);
+        for (const rawKey of arr) {
+          const key = this.normalizeKey(rawKey);
+          if (!key) continue;
+          this.rememberKeyCase(key, rawKey);
+          endpointKeys.push(key);
+        }
       }
 
       const forwardMap = new Map<string, { key: string; bool: boolean }>();
@@ -310,8 +321,10 @@ class GiraEndpointAdapter extends utils.Adapter {
           if (typeof m !== "object" || !m) continue;
           if ((m as any).enabled === false) continue;
           const stateId = String((m as any).stateId ?? "").trim();
-          const key = this.normalizeKey(String((m as any).key ?? "").trim());
+          const rawKey = String((m as any).key ?? "").trim();
+          const key = this.normalizeKey(rawKey);
           if (!stateId || !key) continue;
+          this.rememberKeyCase(key, rawKey || key);
           const name = String((m as any).name ?? "").trim();
           if (name) this.keyDescMap.set(key, name);
           const toEndpoint = (m as any).toEndpoint !== false;
@@ -426,7 +439,7 @@ class GiraEndpointAdapter extends utils.Adapter {
 
       // Pre-create configured endpoint states so they appear immediately in ioBroker
       for (const key of new Set(this.endpointKeys)) {
-        const baseId = `CO@.${this.sanitizeId(key)}`;
+        const baseId = this.makeEndpointBaseId(key);
         this.keyIdMap.set(key, baseId);
         this.idKeyMap.set(baseId, key);
         const name = this.keyDescMap.get(key) || key;
@@ -535,7 +548,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
 
       const validBaseIds = new Set(
-        this.endpointKeys.map((k) => `CO@.${this.sanitizeId(k)}`)
+        this.endpointKeys.map((k) => this.makeEndpointBaseId(k))
       );
       const validArchiveBases = new Set(
         this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`)
@@ -721,7 +734,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                 : undefined;
             if (key === undefined) continue;
             const normalized = this.normalizeKey(key);
-            const baseId = this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
+            this.rememberKeyCase(normalized, String(key));
+            const baseId =
+              this.keyIdMap.get(normalized) ?? this.makeEndpointBaseId(normalized);
             this.keyIdMap.set(normalized, baseId);
             this.idKeyMap.set(baseId, normalized);
             await this.extendObjectAsync(baseId, {
@@ -778,7 +793,9 @@ class GiraEndpointAdapter extends utils.Adapter {
             received.add(normalized);
             const success =
               item.code !== undefined ? item.code === 0 : !("error" in item);
-            const baseId = this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
+            this.rememberKeyCase(normalized, String(key));
+            const baseId =
+              this.keyIdMap.get(normalized) ?? this.makeEndpointBaseId(normalized);
             this.keyIdMap.set(normalized, baseId);
             this.idKeyMap.set(baseId, normalized);
             await this.extendObjectAsync(baseId, {
@@ -822,7 +839,8 @@ class GiraEndpointAdapter extends utils.Adapter {
           const pending = Array.from(this.pendingSubscriptions);
           for (const key of pending) {
             if (!received.has(key)) {
-              const baseId = this.keyIdMap.get(key) ?? `CO@.${this.sanitizeId(key)}`;
+              const baseId =
+                this.keyIdMap.get(key) ?? this.makeEndpointBaseId(key);
               this.keyIdMap.set(key, baseId);
               this.idKeyMap.set(baseId, key);
               await this.extendObjectAsync(baseId, {
@@ -884,6 +902,7 @@ class GiraEndpointAdapter extends utils.Adapter {
 
         for (const { key, data, code } of entries) {
           const normalized = this.normalizeKey(key);
+          this.rememberKeyCase(normalized, String(key));
           if (this.skipInitialUpdate.has(normalized)) {
             this.log.debug(
               this.translate("Skipping initial update for %s", normalized)
@@ -915,7 +934,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.pendingUpdates.delete(normalized);
 
           const baseId =
-            this.keyIdMap.get(normalized) ?? `CO@.${this.sanitizeId(normalized)}`;
+            this.keyIdMap.get(normalized) ?? this.makeEndpointBaseId(normalized);
           this.keyIdMap.set(normalized, baseId);
           this.idKeyMap.set(baseId, normalized);
           const name = this.keyDescMap.get(normalized) || normalized;
@@ -1070,8 +1089,26 @@ class GiraEndpointAdapter extends utils.Adapter {
     return k.startsWith("CO@") ? k : `CO@${k}`;
   }
 
+  private rememberKeyCase(normalized: string, original: string): void {
+    if (!normalized) return;
+    const trimmed = String(original ?? "").trim();
+    if (!trimmed) return;
+    const suffix = trimmed.replace(/^CO@/i, "");
+    this.keyCaseMap.set(normalized, `CO@${suffix}`);
+  }
+
+  private getCasePreservedKey(normalized: string): string {
+    return this.keyCaseMap.get(normalized) ?? normalized;
+  }
+
+  private makeEndpointBaseId(normalized: string): string {
+    const casedKey = this.getCasePreservedKey(normalized);
+    const sanitized = this.sanitizeId(casedKey);
+    return `CO@.${sanitized}`;
+  }
+
   private sanitizeId(s: string): string {
-    return s.replace(/^CO@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
+    return s.replace(/^CO@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_");
   }
 
   private normalizeArchiveKey(k: string): string {
@@ -1182,7 +1219,8 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
       const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool);
       this.client.call(mapped.key, method, uidValue);
-      const baseId = this.keyIdMap.get(mapped.key) ?? `CO@.${this.sanitizeId(mapped.key)}`;
+      const baseId =
+        this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
       this.keyIdMap.set(mapped.key, baseId);
       this.idKeyMap.set(baseId, mapped.key);
       this.setState(`${baseId}.value`, { val: ackVal, ack: true });
