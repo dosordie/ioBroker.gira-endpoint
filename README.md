@@ -83,6 +83,10 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 
 ## Changelog
 
+### 0.2.9
+* Preserve case for CO@ endpoint object IDs
+* Validate CO@/DA@ fields without prefixes in the admin UI
+
 ### 0.2.8
 * Validate group names and show validation hints for endpoint fields in admin UI
 * Add three-dot menu for objects
