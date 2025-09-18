@@ -172,8 +172,8 @@
                   "lg": 6,
                   "xl": 6,
                   "help": "HomeServer Endpunkt CO@",
-                  "validator": "data.key.length > 0",
-                  "validatorErrorText": "Pflichtfeld",
+                  "validator": "((data.key || '').trim().length > 0) && !((data.key || '').trim().toUpperCase().startsWith('CO@'))",
+                  "validatorErrorText": "Pflichtfeld, ohne führendes CO@",
                   "validatorNoSaveOnError": true
                 },
                 {
@@ -282,8 +282,8 @@
                   "lg": 6,
                   "xl": 6,
                   "help": "HomeServer Endpunkt CO@",
-                  "validator": "data.key.length > 0",
-                  "validatorErrorText": "Pflichtfeld",
+                  "validator": "((data.key || '').trim().length > 0) && !((data.key || '').trim().toUpperCase().startsWith('CO@'))",
+                  "validatorErrorText": "Pflichtfeld, ohne führendes CO@",
                   "validatorNoSaveOnError": true
                 },
                 {
@@ -389,7 +389,10 @@
             {
               "type": "text",
               "attr": "key",
-              "label": "DA@"
+              "label": "DA@",
+              "validator": "((data.key || '').trim().length > 0) && !((data.key || '').trim().toUpperCase().startsWith('DA@'))",
+              "validatorErrorText": "Pflichtfeld, ohne führendes DA@",
+              "validatorNoSaveOnError": true
             },
             {
               "type": "text",
