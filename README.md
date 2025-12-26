@@ -83,6 +83,9 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 
 ## Changelog
 
+### 0.3.0
+* Add `info.hsRestart` trigger to resend all \"update on start\" states after a HomeServer restart
+
 ### 0.2.9
 * Preserve case for CO@ endpoint object IDs
 * Validate CO@/DA@ fields without prefixes in the admin UI
