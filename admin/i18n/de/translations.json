@@ -88,6 +88,7 @@
   "Invalid query parameters for %s: %s": "Ungültige Abfrageparameter für %s: %s",
   "Get call failed for %s: %s": "Get-Aufruf fehlgeschlagen für %s: %s",
   "HomeServer restart trigger": "HomeServer-Neustart auslösen",
+  "Commands": "Befehle",
   "Cannot resend update-on-start values because client is not connected": "Kann Aktualisieren-beim-Start-Werte nicht senden, keine Verbindung zum Client",
   "Resending update-on-start states after HomeServer restart": "Sende Aktualisieren-beim-Start-Werte nach HomeServer-Neustart erneut",
   "Failed to resend update-on-start value for %s: %s": "Aktualisieren-beim-Start-Wert für %s konnte nicht erneut gesendet werden: %s",

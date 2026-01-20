@@ -250,7 +250,25 @@ class GiraEndpointAdapter extends utils.Adapter {
         native: {},
       });
       await this.setStateAsync("info.connection", { val: false, ack: true });
+      await this.setObjectNotExistsAsync("command", {
+        type: "channel",
+        common: { name: this.translate("Commands") },
+        native: {},
+      });
+      await this.setObjectNotExistsAsync("command.hsRestart", {
+        type: "state",
+        common: {
+          name: this.translate("HomeServer restart trigger"),
+          type: "boolean",
+          role: "button",
+          read: true,
+          write: true,
+          def: false,
+        },
+        native: {},
+      });
       this.subscribeStates("info.hsRestart");
+      this.subscribeStates("command.hsRestart");
       this.log.debug(this.translate("Pre-created info states"));
 
       await this.setObjectNotExistsAsync("CO@", {
@@ -1314,37 +1332,8 @@ class GiraEndpointAdapter extends utils.Adapter {
       id = id.substring(this.namespace.length + 1);
     }
 
-    if (id === "info.hsRestart") {
-      this.log.debug(
-        this.translate(
-          "HomeServer restart trigger received (val=%s, ack=%s)",
-          state?.val,
-          state?.ack
-        )
-      );
-      if (state?.ack) return;
-      const shouldTrigger =
-        state?.val === true ||
-        state?.val === 1 ||
-        state?.val === "true" ||
-        state?.val === "1";
-      if (shouldTrigger) {
-        if (!this.isConnected) {
-          this.pendingHsRestart = true;
-          this.log.warn(
-            this.translate(
-              "HomeServer restart trigger queued until connection is restored"
-            )
-          );
-          this.setState("info.hsRestart", { val: false, ack: true });
-        } else {
-          this.triggerUpdateOnStart().finally(() => {
-            this.setState("info.hsRestart", { val: false, ack: true });
-          });
-        }
-      } else {
-        this.setState("info.hsRestart", { val: !!state?.val, ack: true });
-      }
+    if (id === "info.hsRestart" || id === "command.hsRestart") {
+      this.handleHsRestartTrigger(id, state);
       return;
     }
 
@@ -1516,6 +1505,42 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.clearTimeout(timer);
     }, 1000);
     this.setState(id, { val: ackVal, ack: true });
+  }
+
+  private handleHsRestartTrigger(
+    id: "info.hsRestart" | "command.hsRestart",
+    state: ioBroker.State | null | undefined
+  ): void {
+    this.log.debug(
+      this.translate(
+        "HomeServer restart trigger received (val=%s, ack=%s)",
+        state?.val,
+        state?.ack
+      )
+    );
+    if (state?.ack) return;
+    const shouldTrigger =
+      state?.val === true ||
+      state?.val === 1 ||
+      state?.val === "true" ||
+      state?.val === "1";
+    if (shouldTrigger) {
+      if (!this.isConnected) {
+        this.pendingHsRestart = true;
+        this.log.warn(
+          this.translate(
+            "HomeServer restart trigger queued until connection is restored"
+          )
+        );
+        this.setState(id, { val: false, ack: true });
+      } else {
+        this.triggerUpdateOnStart().finally(() => {
+          this.setState(id, { val: false, ack: true });
+        });
+      }
+    } else {
+      this.setState(id, { val: !!state?.val, ack: true });
+    }
   }
 }
 
