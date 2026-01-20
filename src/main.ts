@@ -1318,7 +1318,9 @@ class GiraEndpointAdapter extends utils.Adapter {
 
     if (id === "info.hsRestart") {
       if (state?.ack) return;
-      if (state?.val === true) {
+      const shouldTrigger =
+        state?.val === true || state?.val === 1 || state?.val === "true";
+      if (shouldTrigger) {
         if (!this.isConnected) {
           this.pendingHsRestart = true;
           this.log.warn(
