@@ -1184,7 +1184,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (id.startsWith(this.namespace + ".")) {
             id = id.substring(this.namespace.length + 1);
         }
-        if (id === "info.hsRestart" || id === "command.hsRestart") {
+        if (id === "command.hsRestart") {
             this.handleHsRestartTrigger(id, state);
             return;
         }

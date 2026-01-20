@@ -125,19 +125,6 @@
       "native": {}
     },
     {
-      "_id": "info.hsRestart",
-      "type": "state",
-      "common": {
-        "name": "HomeServer restart trigger",
-        "type": "boolean",
-        "role": "button",
-        "read": true,
-        "write": true,
-        "def": false
-      },
-      "native": {}
-    },
-    {
       "_id": "info.lastEvent",
       "type": "state",
       "common": {
