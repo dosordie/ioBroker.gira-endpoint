@@ -88,6 +88,7 @@
   "Invalid query parameters for %s: %s": "Invalid query parameters for %s: %s",
   "Get call failed for %s: %s": "Get call failed for %s: %s",
   "HomeServer restart trigger": "HomeServer restart trigger",
+  "Commands": "Commands",
   "Cannot resend update-on-start values because client is not connected": "Cannot resend update-on-start values because client is not connected",
   "Resending update-on-start states after HomeServer restart": "Resending update-on-start states after HomeServer restart",
   "Failed to resend update-on-start value for %s: %s": "Failed to resend update-on-start value for %s: %s",
