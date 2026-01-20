@@ -196,6 +196,18 @@ class GiraEndpointAdapter extends utils.Adapter {
                 },
                 native: {},
             });
+            await this.setObjectNotExistsAsync("info.hsRestart", {
+                type: "state",
+                common: {
+                    name: this.translate("HomeServer restart trigger"),
+                    type: "boolean",
+                    role: "button",
+                    read: true,
+                    write: true,
+                    def: false,
+                },
+                native: {},
+            });
             await this.setStateAsync("info.connection", { val: false, ack: true });
             await this.setObjectNotExistsAsync("command", {
                 type: "channel",
@@ -214,6 +226,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 },
                 native: {},
             });
+            this.subscribeStates("info.hsRestart");
             this.subscribeStates("command.hsRestart");
             this.log.debug(this.translate("Pre-created info states"));
             await this.setObjectNotExistsAsync("CO@", {
