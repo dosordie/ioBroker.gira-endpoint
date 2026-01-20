@@ -161,5 +161,25 @@
       },
       "native": {}
     }
+    ,
+    {
+      "_id": "command",
+      "type": "channel",
+      "common": { "name": "Commands" },
+      "native": {}
+    },
+    {
+      "_id": "command.hsRestart",
+      "type": "state",
+      "common": {
+        "name": "HomeServer restart trigger",
+        "type": "boolean",
+        "role": "button",
+        "read": true,
+        "write": true,
+        "def": false
+      },
+      "native": {}
+    }
   ]
 }
