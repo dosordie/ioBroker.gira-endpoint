@@ -1252,21 +1252,19 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.keyIdMap.set(src.key, baseId);
         this.idKeyMap.set(baseId, src.key);
 
-        if (!src.foreign) {
-          await this.setStateAsync(`${baseId}.value`, { val: ackVal, ack: true });
-          const mappedForeign = this.reverseMap.get(src.key);
-          if (mappedForeign) {
-            const mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
-            this.suppressStateChange.add(mappedForeign.stateId);
-            await this.setForeignStateAsync(mappedForeign.stateId, {
-              val: mappedVal,
-              ack: mappedForeign.ack,
-            });
-            const timer = this.setTimeout(() => {
-              this.suppressStateChange.delete(mappedForeign.stateId);
-              this.clearTimeout(timer);
-            }, 1000);
-          }
+        await this.setStateAsync(`${baseId}.value`, { val: ackVal, ack: true });
+        const mappedForeign = this.reverseMap.get(src.key);
+        if (mappedForeign) {
+          const mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
+          this.suppressStateChange.add(mappedForeign.stateId);
+          await this.setForeignStateAsync(mappedForeign.stateId, {
+            val: mappedVal,
+            ack: mappedForeign.ack,
+          });
+          const timer = this.setTimeout(() => {
+            this.suppressStateChange.delete(mappedForeign.stateId);
+            this.clearTimeout(timer);
+          }, 1000);
         }
 
         this.pendingUpdates.set(src.key, ackVal);
@@ -1319,7 +1317,10 @@ class GiraEndpointAdapter extends utils.Adapter {
     if (id === "info.hsRestart") {
       if (state?.ack) return;
       const shouldTrigger =
-        state?.val === true || state?.val === 1 || state?.val === "true";
+        state?.val === true ||
+        state?.val === 1 ||
+        state?.val === "true" ||
+        state?.val === "1";
       if (shouldTrigger) {
         if (!this.isConnected) {
           this.pendingHsRestart = true;
