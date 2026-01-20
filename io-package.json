@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "news": {
+      "0.3.1": {
+        "en": "Bump version to 0.3.1",
+        "de": "Version auf 0.3.1 erhöht"
+      },
       "0.3.0": {
         "en": "Add HomeServer restart trigger to resend update-on-start values in both directions",
         "de": "Neuen HomeServer-Neustart-Trigger hinzugefügt, um Aktualisieren-beim-Start-Werte in beide Richtungen erneut zu senden"
