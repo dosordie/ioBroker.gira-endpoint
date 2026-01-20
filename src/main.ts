@@ -158,6 +158,8 @@ class GiraEndpointAdapter extends utils.Adapter {
   private initialSkipUpdate = new Set<string>();
   private updateOnStartSources: Array<{ key: string; stateId: string; bool: boolean; foreign: boolean }> = [];
   private pendingSubscriptions = new Set<string>();
+  private isConnected = false;
+  private pendingHsRestart = false;
   private archiveKeys: string[] = [];
   private archiveKeyIdMap = new Map<string, string>();
   private archiveIdKeyMap = new Map<string, string>();
@@ -670,6 +672,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.client.on("open", () => {
         const url = `${ssl ? "wss" : "ws"}://${host}:${port}${path}`;
         this.log.info(this.translate("Connected to %s", url));
+        this.isConnected = true;
         this.setState("info.connection", true, true);
         this.fetchedMeta.clear();
         this.skipInitialUpdate = new Set(this.initialSkipUpdate);
@@ -717,6 +720,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             ack: true,
           });
         }
+        if (this.pendingHsRestart) {
+          this.pendingHsRestart = false;
+          void this.triggerUpdateOnStart();
+        }
       });
 
       this.client.on("close", (info: any) => {
@@ -726,6 +733,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           info?.reason || ""
         );
         this.log.warn(msg);
+        this.isConnected = false;
         this.setState("info.connection", false, true);
         this.getStatesAsync("CO@.*.subscription")
           .then((states: Record<string, ioBroker.State | null>) => {
@@ -1216,7 +1224,8 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private async triggerUpdateOnStart(): Promise<void> {
-    if (!this.client) {
+    if (!this.client || !this.isConnected) {
+      this.pendingHsRestart = true;
       this.log.warn(
         this.translate(
           "Cannot resend update-on-start values because client is not connected"
@@ -1310,9 +1319,19 @@ class GiraEndpointAdapter extends utils.Adapter {
     if (id === "info.hsRestart") {
       if (state?.ack) return;
       if (state?.val === true) {
-        this.triggerUpdateOnStart().finally(() => {
+        if (!this.isConnected) {
+          this.pendingHsRestart = true;
+          this.log.warn(
+            this.translate(
+              "HomeServer restart trigger queued until connection is restored"
+            )
+          );
           this.setState("info.hsRestart", { val: false, ack: true });
-        });
+        } else {
+          this.triggerUpdateOnStart().finally(() => {
+            this.setState("info.hsRestart", { val: false, ack: true });
+          });
+        }
       } else {
         this.setState("info.hsRestart", { val: !!state?.val, ack: true });
       }
