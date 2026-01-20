@@ -135,7 +135,10 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.pendingUpdates = new Map();
         this.skipInitialUpdate = new Set();
         this.initialSkipUpdate = new Set();
+        this.updateOnStartSources = [];
         this.pendingSubscriptions = new Set();
+        this.isConnected = false;
+        this.pendingHsRestart = false;
         this.archiveKeys = [];
         this.archiveKeyIdMap = new Map();
         this.archiveIdKeyMap = new Map();
@@ -193,7 +196,38 @@ class GiraEndpointAdapter extends utils.Adapter {
                 },
                 native: {},
             });
+            await this.setObjectNotExistsAsync("info.hsRestart", {
+                type: "state",
+                common: {
+                    name: this.translate("HomeServer restart trigger"),
+                    type: "boolean",
+                    role: "button",
+                    read: true,
+                    write: true,
+                    def: false,
+                },
+                native: {},
+            });
             await this.setStateAsync("info.connection", { val: false, ack: true });
+            await this.setObjectNotExistsAsync("command", {
+                type: "channel",
+                common: { name: this.translate("Commands") },
+                native: {},
+            });
+            await this.setObjectNotExistsAsync("command.hsRestart", {
+                type: "state",
+                common: {
+                    name: this.translate("HomeServer restart trigger"),
+                    type: "boolean",
+                    role: "button",
+                    read: true,
+                    write: true,
+                    def: false,
+                },
+                native: {},
+            });
+            this.subscribeStates("info.hsRestart");
+            this.subscribeStates("command.hsRestart");
             this.log.debug(this.translate("Pre-created info states"));
             await this.setObjectNotExistsAsync("CO@", {
                 type: "channel",
@@ -216,6 +250,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
             const boolKeys = new Set();
             const skipInitial = new Set();
+            const updateOnStartSources = [];
             this.keyCaseMap.clear();
             const rawKeys = Array.isArray(cfg.endpointGroups)
                 ? cfg.endpointGroups.flatMap((g) => Array.isArray(g?.keys) ? g.keys : [])
@@ -240,6 +275,15 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const updateOnStart = k.updateOnStart !== false;
                         if (!updateOnStart)
                             skipInitial.add(key);
+                        if (updateOnStart) {
+                            const baseId = this.makeEndpointBaseId(key);
+                            updateOnStartSources.push({
+                                key,
+                                stateId: `${baseId}.value`,
+                                bool,
+                                foreign: false,
+                            });
+                        }
                         endpointKeys.push(key);
                     }
                     else {
@@ -303,6 +347,14 @@ class GiraEndpointAdapter extends utils.Adapter {
                         forwardMap.set(stateId, { key, bool });
                         if (bool)
                             boolKeys.add(key);
+                        if (updateOnStart) {
+                            updateOnStartSources.push({
+                                key,
+                                stateId,
+                                bool,
+                                foreign: true,
+                            });
+                        }
                     }
                     if (toState) {
                         reverseMap.set(key, { stateId, bool, ack });
@@ -318,6 +370,13 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.boolKeys = boolKeys;
             this.skipInitialUpdate = skipInitial;
             this.initialSkipUpdate = new Set(skipInitial);
+            const uniqueSources = new Map();
+            for (const src of updateOnStartSources) {
+                const key = `${src.key}|${src.stateId}|${src.foreign ? "1" : "0"}`;
+                if (!uniqueSources.has(key))
+                    uniqueSources.set(key, src);
+            }
+            this.updateOnStartSources = Array.from(uniqueSources.values());
             this.archiveQueryDefaults.clear();
             const rawArchives = cfg.dataArchives;
             const archiveKeys = [];
@@ -577,6 +636,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.client.on("open", () => {
                 const url = `${ssl ? "wss" : "ws"}://${host}:${port}${path}`;
                 this.log.info(this.translate("Connected to %s", url));
+                this.isConnected = true;
                 this.setState("info.connection", true, true);
                 this.fetchedMeta.clear();
                 this.skipInitialUpdate = new Set(this.initialSkipUpdate);
@@ -618,10 +678,15 @@ class GiraEndpointAdapter extends utils.Adapter {
                         ack: true,
                     });
                 }
+                if (this.pendingHsRestart) {
+                    this.pendingHsRestart = false;
+                    void this.triggerUpdateOnStart();
+                }
             });
             this.client.on("close", (info) => {
                 const msg = this.translate("Connection closed (%s) %s", info?.code || "?", info?.reason || "");
                 this.log.warn(msg);
+                this.isConnected = false;
                 this.setState("info.connection", false, true);
                 this.getStatesAsync("CO@.*.subscription")
                     .then((states) => {
@@ -1046,6 +1111,50 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
         }
     }
+    async triggerUpdateOnStart() {
+        if (!this.client || !this.isConnected) {
+            this.pendingHsRestart = true;
+            this.log.warn(this.translate("Cannot resend update-on-start values because client is not connected"));
+            return;
+        }
+        this.log.info(this.translate("Resending update-on-start states after HomeServer restart"));
+        for (const src of this.updateOnStartSources) {
+            try {
+                const state = src.foreign
+                    ? await this.getForeignStateAsync(src.stateId)
+                    : await this.getStateAsync(src.stateId);
+                if (!state)
+                    continue;
+                const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool);
+                this.client.call(src.key, method, uidValue);
+                const baseId = this.keyIdMap.get(src.key) ?? this.makeEndpointBaseId(src.key);
+                this.keyIdMap.set(src.key, baseId);
+                this.idKeyMap.set(baseId, src.key);
+                await this.setStateAsync(`${baseId}.value`, { val: ackVal, ack: true });
+                const mappedForeign = this.reverseMap.get(src.key);
+                if (mappedForeign) {
+                    const mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
+                    this.suppressStateChange.add(mappedForeign.stateId);
+                    await this.setForeignStateAsync(mappedForeign.stateId, {
+                        val: mappedVal,
+                        ack: mappedForeign.ack,
+                    });
+                    const timer = this.setTimeout(() => {
+                        this.suppressStateChange.delete(mappedForeign.stateId);
+                        this.clearTimeout(timer);
+                    }, 1000);
+                }
+                this.pendingUpdates.set(src.key, ackVal);
+                const timer = this.setTimeout(() => {
+                    this.pendingUpdates.delete(src.key);
+                    this.clearTimeout(timer);
+                }, 1000);
+            }
+            catch (err) {
+                this.log.warn(this.translate("Failed to resend update-on-start value for %s: %s", src.stateId, err?.message || err));
+            }
+        }
+    }
     async onUnload(callback) {
         try {
             this.log.info(this.translate("Shutting down..."));
@@ -1072,13 +1181,15 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
     }
     onStateChange(id, state) {
-        if (!state || !this.client)
-            return;
-        // In case we receive a fully qualified id (e.g. from setForeignState),
-        // strip the adapter namespace so further processing works as expected.
         if (id.startsWith(this.namespace + ".")) {
             id = id.substring(this.namespace.length + 1);
         }
+        if (id === "info.hsRestart" || id === "command.hsRestart") {
+            this.handleHsRestartTrigger(id, state);
+            return;
+        }
+        if (!state || !this.client)
+            return;
         const mapped = this.forwardMap.get(id);
         if (mapped) {
             if (this.suppressStateChange.has(id)) {
@@ -1223,6 +1334,30 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.clearTimeout(timer);
         }, 1000);
         this.setState(id, { val: ackVal, ack: true });
+    }
+    handleHsRestartTrigger(id, state) {
+        this.log.debug(this.translate("HomeServer restart trigger received (val=%s, ack=%s)", state?.val, state?.ack));
+        if (state?.ack)
+            return;
+        const shouldTrigger = state?.val === true ||
+            state?.val === 1 ||
+            state?.val === "true" ||
+            state?.val === "1";
+        if (shouldTrigger) {
+            if (!this.isConnected) {
+                this.pendingHsRestart = true;
+                this.log.warn(this.translate("HomeServer restart trigger queued until connection is restored"));
+                this.setState(id, { val: false, ack: true });
+            }
+            else {
+                this.triggerUpdateOnStart().finally(() => {
+                    this.setState(id, { val: false, ack: true });
+                });
+            }
+        }
+        else {
+            this.setState(id, { val: !!state?.val, ack: true });
+        }
     }
 }
 if (module.parent) {
