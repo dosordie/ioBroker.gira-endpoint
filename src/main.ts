@@ -1315,6 +1315,13 @@ class GiraEndpointAdapter extends utils.Adapter {
     }
 
     if (id === "info.hsRestart") {
+      this.log.debug(
+        this.translate(
+          "HomeServer restart trigger received (val=%s, ack=%s)",
+          state?.val,
+          state?.ack
+        )
+      );
       if (state?.ack) return;
       const shouldTrigger =
         state?.val === true ||
