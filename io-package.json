@@ -1,8 +1,16 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.2.9",
+    "version": "0.3.1",
     "news": {
+      "0.3.1": {
+        "en": "Bump version to 0.3.1",
+        "de": "Version auf 0.3.1 erhöht"
+      },
+      "0.3.0": {
+        "en": "Add HomeServer restart trigger to resend update-on-start values in both directions",
+        "de": "Neuen HomeServer-Neustart-Trigger hinzugefügt, um Aktualisieren-beim-Start-Werte in beide Richtungen erneut zu senden"
+      },
       "0.2.9": {
         "en": "Preserve CO@ endpoint object ID casing and validate CO@/DA@ fields without prefixes",
         "de": "Schreibweise der CO@-Endpunkt-IDs beibehalten und CO@-/DA@-Felder ohne Präfix validieren"
@@ -137,6 +145,26 @@
         "role": "text",
         "read": true,
         "write": false
+      },
+      "native": {}
+    }
+    ,
+    {
+      "_id": "command",
+      "type": "channel",
+      "common": { "name": "Commands" },
+      "native": {}
+    },
+    {
+      "_id": "command.hsRestart",
+      "type": "state",
+      "common": {
+        "name": "HomeServer restart trigger",
+        "type": "boolean",
+        "role": "button",
+        "read": true,
+        "write": true,
+        "def": false
       },
       "native": {}
     }
