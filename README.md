@@ -49,26 +49,6 @@ Eingabewerte können sein:  true | false | toggle | String | Number
 Bis der Adapter Offiziell ist:
 Im ioBroker unter Adapter auf den Expertenmodus schalten, Github anklicken und https://github.com/dosordie/ioBroker.gira-endpoint/ bei Benutzerdefiniert eintragen
 
-## Installation (lokal) *Für test ect.*
-
-```bash
-Per Tarball installieren 
-# im Projektordner
-cd ~/iobroker.gira-endpoint
-git pull --ff-only
-npm run build
-npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.2.0.tgz
-
-# ins ioBroker-Verzeichnis und dort installieren (als iobroker-User)
-cd /opt/iobroker
-sudo -u iobroker -H npm i --omit=dev ~/iobroker.gira-endpoint/iobroker.gira-endpoint-0.2.0.tgz
-
-# Dateien hochladen & Instanz anlegen
-iobroker upload gira-endpoint
-## optional hinzufügen
-#iobroker add gira-endpoint
-
-```
 
 ## 💙 Unterstützung
 
@@ -129,4 +109,25 @@ GNU General Public License v3.0
 Der Adapter wurde nachgebaut auf Basis von:  
 👉 [node-red-contrib-gira-endpoint](https://github.com/luckyy0815/node-red-contrib-gira-endpoint)
 
+
+## Installation (lokal) *Für test ect.*
+
+```bash
+Per Tarball installieren 
+# im Projektordner
+cd ~/iobroker.gira-endpoint
+git pull --ff-only
+npm run build
+npm pack                   # erzeugt z.B. iobroker.gira-endpoint-0.2.0.tgz
+
+# ins ioBroker-Verzeichnis und dort installieren (als iobroker-User)
+cd /opt/iobroker
+sudo -u iobroker -H npm i --omit=dev ~/iobroker.gira-endpoint/iobroker.gira-endpoint-0.2.0.tgz
+
+# Dateien hochladen & Instanz anlegen
+iobroker upload gira-endpoint
+## optional hinzufügen
+#iobroker add gira-endpoint
+
+```
 ---
