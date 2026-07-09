@@ -391,7 +391,9 @@ class GiraEndpointAdapter extends utils.Adapter {
           const bool = Boolean((m as any).bool);
           const ack = (m as any).ack !== false;
           const textEncoding = normalizeTextEncoding((m as any).textEncoding);
-          keyTextEncodingMap.set(key, textEncoding);
+          if (!keyTextEncodingMap.has(key)) {
+            keyTextEncodingMap.set(key, textEncoding);
+          }
           const updateOnStart = (m as any).updateOnStart !== false;
           if (!updateOnStart) skipInitial.add(key);
           if (toEndpoint) {
