@@ -1,6 +1,6 @@
 import { strict as assert } from "assert";
 import { describe, it } from "mocha";
-const { encodeUidValue, decodeAckValue } = require("../src/main");
+const { encodeUidValue, decodeAckValue, decodeCoValue } = require("../src/main");
 
 describe("value conversion helpers", () => {
   describe("encodeUidValue", () => {
@@ -49,6 +49,23 @@ describe("value conversion helpers", () => {
     it("decodes boolean in number mode", () => {
       const res = decodeAckValue(true, false);
       assert.deepStrictEqual(res, { value: 1, type: "number" });
+    });
+  });
+
+  describe("decodeCoValue", () => {
+    it("decodes incoming Latin1 Base64 text with configured Latin1 encoding", () => {
+      const res = decodeCoValue("SGF1cHR35HNjaGUy", false, "latin1");
+      assert.deepStrictEqual(res, { value: "Hauptwäsche2", type: "string" });
+    });
+
+    it("decodes incoming UTF-8 Base64 text with default UTF-8 encoding", () => {
+      const res = decodeCoValue("SGF1cHR3w6RzY2hlMg==", false, "utf8");
+      assert.deepStrictEqual(res, { value: "Hauptwäsche2", type: "string" });
+    });
+
+    it("preserves numeric conversion for incoming numeric strings", () => {
+      const res = decodeCoValue("123", false, "latin1");
+      assert.deepStrictEqual(res, { value: 123, type: "number" });
     });
   });
 });

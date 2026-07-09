@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.encodeUidValue = encodeUidValue;
 exports.decodeAckValue = decodeAckValue;
+exports.decodeCoValue = decodeCoValue;
 const utils = __importStar(require("@iobroker/adapter-core"));
 const GiraClient_1 = require("./lib/GiraClient");
 const crypto_1 = require("crypto");
@@ -113,6 +114,19 @@ function decodeAckValue(val, boolMode) {
             return { value: val, type: "string" };
         return { value: val, type: "mixed" };
     }
+}
+function decodeCoValue(rawValue, boolMode, textEncoding = "utf8") {
+    if (boolMode || typeof rawValue !== "string") {
+        return decodeAckValue(rawValue, boolMode);
+    }
+    const num = Number(rawValue);
+    if (!isNaN(num)) {
+        return { value: num, type: "number" };
+    }
+    return {
+        value: Buffer.from(rawValue, "base64").toString(normalizeTextEncoding(textEncoding)),
+        type: "string",
+    };
 }
 class GiraEndpointAdapter extends utils.Adapter {
     notifyAdmin(message) {
@@ -897,8 +911,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                         continue;
                     }
                     const boolKey = this.boolKeys.has(normalized);
+                    const textEncoding = this.keyTextEncodingMap.get(normalized) ?? "utf8";
                     const rawVal = data.value;
-                    const decoded = decodeAckValue(rawVal, boolKey);
+                    const decoded = decodeCoValue(rawVal, boolKey, textEncoding);
                     const value = decoded.value;
                     const type = decoded.type;
                     const pending = this.pendingUpdates.get(normalized);

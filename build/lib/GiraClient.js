@@ -258,14 +258,6 @@ class GiraClient extends events_1.EventEmitter {
             if (!isNaN(num)) {
                 v = num;
             }
-            else {
-                try {
-                    v = Buffer.from(v, "base64").toString("utf8");
-                }
-                catch {
-                    // ignorieren, wenn keine gültige Base64
-                }
-            }
         }
         return v;
     }

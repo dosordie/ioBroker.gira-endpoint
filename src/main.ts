@@ -153,6 +153,24 @@ export function decodeAckValue(
   }
 }
 
+export function decodeCoValue(
+  rawValue: any,
+  boolMode: boolean,
+  textEncoding: TextEncoding = "utf8"
+): { value: any; type: ioBroker.StateCommon["type"] } {
+  if (boolMode || typeof rawValue !== "string") {
+    return decodeAckValue(rawValue, boolMode);
+  }
+  const num = Number(rawValue);
+  if (!isNaN(num)) {
+    return { value: num, type: "number" };
+  }
+  return {
+    value: Buffer.from(rawValue, "base64").toString(normalizeTextEncoding(textEncoding)),
+    type: "string",
+  };
+}
+
 class GiraEndpointAdapter extends utils.Adapter {
   private client?: GiraClient;
   private endpointKeys: string[] = [];
@@ -1005,8 +1023,9 @@ class GiraEndpointAdapter extends utils.Adapter {
             continue;
           }
           const boolKey = this.boolKeys.has(normalized);
+          const textEncoding = this.keyTextEncodingMap.get(normalized) ?? "utf8";
           const rawVal = data.value;
-          const decoded = decodeAckValue(rawVal, boolKey);
+          const decoded = decodeCoValue(rawVal, boolKey, textEncoding);
           const value = decoded.value;
           const type = decoded.type;
 
