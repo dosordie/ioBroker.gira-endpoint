@@ -1,5 +1,6 @@
 {
   "type": "tabs",
+  "i18n": false,
   "items": {
     "settingsTab": {
       "type": "panel",
