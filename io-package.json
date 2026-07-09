@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "news": {
+      "0.3.2": {
+        "en": "Decode incoming CO text values with configured UTF-8 or Latin1 encoding",
+        "de": "Eingehende CO-Textwerte mit konfigurierter UTF-8- oder Latin1-Kodierung dekodieren"
+      },
       "0.3.1": {
         "en": "Bump version to 0.3.1",
         "de": "Version auf 0.3.1 erhöht"
