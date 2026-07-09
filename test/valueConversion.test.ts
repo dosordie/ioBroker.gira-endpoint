@@ -1,6 +1,6 @@
 import { strict as assert } from "assert";
 import { describe, it } from "mocha";
-const { encodeUidValue, decodeAckValue, decodeCoValue } = require("../src/main");
+const { encodeUidValue, decodeAckValue, decodeCoValue } = require("../build/lib/valueConversion");
 
 describe("value conversion helpers", () => {
   describe("encodeUidValue", () => {

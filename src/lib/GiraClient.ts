@@ -23,6 +23,45 @@ export function codeToMessage(code: number): string {
   return STATUS_CODE_MESSAGES[code] || `Error code ${code}`;
 }
 
+function shorten(value: string, maxLength = 200): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
+function safeStringify(value: any): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.stringify(value, (key, val) => {
+      const lower = String(key).toLowerCase();
+      if (lower.includes("password") || lower.includes("authorization")) {
+        return "[redacted]";
+      }
+      return val;
+    });
+  } catch {
+    return String(value);
+  }
+}
+
+export function formatCallError(payload: any, fallbackRequest?: any): string {
+  const code = Number(payload?.code);
+  const message = payload?.message || payload?.error || codeToMessage(code);
+  const request = payload?.request ?? fallbackRequest;
+  const source = payload?.param ?? payload?.data ?? request ?? {};
+  const key = payload?.key ?? source?.key;
+  const method = payload?.method ?? source?.method;
+  const value = payload?.value ?? source?.value;
+  const params = payload?.params ?? source?.params ?? source?.param;
+  const tag = payload?.tag ?? payload?.context;
+  const parts = [`code=${Number.isNaN(code) ? payload?.code : code}`, message];
+  if (key !== undefined) parts.push(`key=${key}`);
+  if (method !== undefined) parts.push(`method=${method}`);
+  if (value !== undefined) parts.push(`value=${shorten(safeStringify(value) ?? String(value))}`);
+  if (params !== undefined) parts.push(`params=${shorten(safeStringify(params) ?? String(params))}`);
+  if (tag !== undefined) parts.push(`tag=${tag}`);
+  if (request !== undefined) parts.push(`request=${shorten(safeStringify(request) ?? String(request))}`);
+  return `Gira call failed: ${parts.join(", ")}`;
+}
+
 interface ReconnectOptions {
   minMs: number;
   maxMs: number;
@@ -158,12 +197,9 @@ export class GiraClient extends EventEmitter {
           payload.code !== undefined &&
           payload.code !== 0
         ) {
-          const msg =
-            (payload as any).message ||
-            (payload as any).error ||
-            codeToMessage(payload.code);
           const tag = (payload as any).tag;
-          const err: any = new Error(msg);
+          const fallbackRequest = payload?.request;
+          const err: any = new Error(formatCallError(payload, fallbackRequest));
           err.code = payload.code;
           if (tag && this.tagResolvers.has(tag)) {
             const resolver = this.tagResolvers.get(tag);
@@ -264,7 +300,7 @@ export class GiraClient extends EventEmitter {
       const reqKey = this.makeRequestKey(param);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error("Timeout"));
+          reject(new Error(`Gira call failed: Timeout, key=${key}, method=${method}, tag=${tag}, params=${shorten(safeStringify(param) ?? String(param))}`));
           this.tagResolvers.delete(tag);
           this.requestTags.delete(reqKey);
         }, timeoutMs);
@@ -286,7 +322,7 @@ export class GiraClient extends EventEmitter {
       msg.tag = tag;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error("Timeout"));
+          reject(new Error(`Gira select failed: Timeout, tag=${tag}, params=${shorten(safeStringify(filter) ?? String(filter))}`));
           this.tagResolvers.delete(tag);
         }, timeoutMs);
         this.tagResolvers.set(tag, { resolve, reject, timer });
