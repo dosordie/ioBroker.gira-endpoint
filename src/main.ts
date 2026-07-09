@@ -5,6 +5,8 @@ import { format } from "util";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
+type TextEncoding = "utf8" | "latin1";
+
 interface AdapterConfig extends ioBroker.AdapterConfig {
   host?: string;
   port?: number;
@@ -26,6 +28,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
         bool?: boolean;
         updateOnStart?: boolean;
         enabled?: boolean;
+        textEncoding?: TextEncoding;
       }[]
     | string;
   endpointGroups?: {
@@ -36,6 +39,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
       bool?: boolean;
       updateOnStart?: boolean;
       enabled?: boolean;
+      textEncoding?: TextEncoding;
     }[];
   }[];
   updateLastEvent?: boolean;
@@ -49,6 +53,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     ack?: boolean;
     updateOnStart?: boolean;
     enabled?: boolean;
+    textEncoding?: TextEncoding;
   }[]; // legacy support
   mappingGroups?: {
     group?: string;
@@ -62,6 +67,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
       ack?: boolean;
       updateOnStart?: boolean;
       enabled?: boolean;
+      textEncoding?: TextEncoding;
     }[];
   }[];
   dataArchives?:
@@ -77,9 +83,14 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     | string;
 }
 
+function normalizeTextEncoding(textEncoding: any): TextEncoding {
+  return textEncoding === "latin1" ? "latin1" : "utf8";
+}
+
 export function encodeUidValue(
   val: any,
-  boolMode: boolean
+  boolMode: boolean,
+  textEncoding: TextEncoding = "utf8"
 ): { uidValue: string; ackVal: any; method: "set" | "toggle" } {
   let method: "set" | "toggle" = "set";
   let uidValue: any = val;
@@ -104,7 +115,7 @@ export function encodeUidValue(
         uidValue = num ? "1" : "0";
       } else {
         ackVal = uidValue;
-        uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+        uidValue = Buffer.from(uidValue, normalizeTextEncoding(textEncoding)).toString("base64");
       }
     }
   } else {
@@ -119,7 +130,7 @@ export function encodeUidValue(
         uidValue = "1";
         method = "toggle";
       } else if (isNaN(Number(uidValue))) {
-        uidValue = Buffer.from(uidValue, "utf8").toString("base64");
+        uidValue = Buffer.from(uidValue, normalizeTextEncoding(textEncoding)).toString("base64");
       }
     }
   }
@@ -149,14 +160,21 @@ class GiraEndpointAdapter extends utils.Adapter {
   private idKeyMap = new Map<string, string>();
   private keyDescMap = new Map<string, string>();
   private keyCaseMap = new Map<string, string>();
-  private forwardMap = new Map<string, { key: string; bool: boolean }>();
+  private forwardMap = new Map<string, { key: string; bool: boolean; textEncoding: TextEncoding }>();
+  private keyTextEncodingMap = new Map<string, TextEncoding>();
   private reverseMap = new Map<string, { stateId: string; bool: boolean; ack: boolean }>();
   private boolKeys = new Set<string>();
   private suppressStateChange = new Set<string>();
   private pendingUpdates = new Map<string, any>();
   private skipInitialUpdate = new Set<string>();
   private initialSkipUpdate = new Set<string>();
-  private updateOnStartSources: Array<{ key: string; stateId: string; bool: boolean; foreign: boolean }> = [];
+  private updateOnStartSources: Array<{
+    key: string;
+    stateId: string;
+    bool: boolean;
+    foreign: boolean;
+    textEncoding: TextEncoding;
+  }> = [];
   private pendingSubscriptions = new Set<string>();
   private isConnected = false;
   private pendingHsRestart = false;
@@ -287,7 +305,9 @@ class GiraEndpointAdapter extends utils.Adapter {
         stateId: string;
         bool: boolean;
         foreign: boolean;
+        textEncoding: TextEncoding;
       }> = [];
+      const keyTextEncodingMap = new Map<string, TextEncoding>();
 
       this.keyCaseMap.clear();
 
@@ -309,6 +329,8 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (name) this.keyDescMap.set(key, name);
             const bool = Boolean((k as any).bool);
             if (bool) boolKeys.add(key);
+            const textEncoding = normalizeTextEncoding((k as any).textEncoding);
+            keyTextEncodingMap.set(key, textEncoding);
             const updateOnStart = (k as any).updateOnStart !== false;
             if (!updateOnStart) skipInitial.add(key);
             if (updateOnStart) {
@@ -318,6 +340,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 stateId: `${baseId}.value`,
                 bool,
                 foreign: false,
+                textEncoding,
               });
             }
             endpointKeys.push(key);
@@ -342,7 +365,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
       }
 
-      const forwardMap = new Map<string, { key: string; bool: boolean }>();
+      const forwardMap = new Map<string, { key: string; bool: boolean; textEncoding: TextEncoding }>();
       const reverseMap = new Map<string, { stateId: string; bool: boolean; ack: boolean }>();
       const mappingGroups = Array.isArray(cfg.mappingGroups)
         ? cfg.mappingGroups
@@ -367,10 +390,14 @@ class GiraEndpointAdapter extends utils.Adapter {
           const toState = Boolean((m as any).toState);
           const bool = Boolean((m as any).bool);
           const ack = (m as any).ack !== false;
+          const textEncoding = normalizeTextEncoding((m as any).textEncoding);
+          if (!keyTextEncodingMap.has(key)) {
+            keyTextEncodingMap.set(key, textEncoding);
+          }
           const updateOnStart = (m as any).updateOnStart !== false;
           if (!updateOnStart) skipInitial.add(key);
           if (toEndpoint) {
-            forwardMap.set(stateId, { key, bool });
+            forwardMap.set(stateId, { key, bool, textEncoding });
             if (bool) boolKeys.add(key);
             if (updateOnStart) {
               updateOnStartSources.push({
@@ -378,6 +405,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 stateId,
                 bool,
                 foreign: true,
+                textEncoding,
               });
             }
           }
@@ -393,7 +421,16 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.boolKeys = boolKeys;
       this.skipInitialUpdate = skipInitial;
       this.initialSkipUpdate = new Set(skipInitial);
-      const uniqueSources = new Map<string, { key: string; stateId: string; bool: boolean; foreign: boolean }>();
+      const uniqueSources = new Map<
+        string,
+        {
+          key: string;
+          stateId: string;
+          bool: boolean;
+          foreign: boolean;
+          textEncoding: TextEncoding;
+        }
+      >();
       for (const src of updateOnStartSources) {
         const key = `${src.key}|${src.stateId}|${src.foreign ? "1" : "0"}`;
         if (!uniqueSources.has(key)) uniqueSources.set(key, src);
@@ -450,6 +487,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
       }
       this.endpointKeys = endpointKeys;
+      this.keyTextEncodingMap = keyTextEncodingMap;
 
       const endpointKeysText = this.endpointKeys.length
         ? this.endpointKeys.join(", ")
@@ -1250,7 +1288,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           : await this.getStateAsync(src.stateId);
         if (!state) continue;
 
-        const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool);
+        const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool, src.textEncoding);
         this.client.call(src.key, method, uidValue);
 
         const baseId = this.keyIdMap.get(src.key) ?? this.makeEndpointBaseId(src.key);
@@ -1337,7 +1375,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         );
         return;
       }
-      const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool);
+      const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool, mapped.textEncoding);
       this.client.call(mapped.key, method, uidValue);
       const baseId =
         this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
@@ -1468,7 +1506,8 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.idKeyMap.get(baseId) ??
       this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
     const boolKey = this.boolKeys.has(key);
-    const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey);
+    const textEncoding = this.keyTextEncodingMap.get(key) ?? "utf8";
+    const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey, textEncoding);
     this.client.call(key, method, uidValue);
     const mappedForeign = this.reverseMap.get(key);
     if (mappedForeign) {

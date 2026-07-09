@@ -209,6 +209,28 @@
                   "xl": 4
                 },
                 {
+                  "type": "select",
+                  "attr": "textEncoding",
+                  "label": "Text-Encoding",
+                  "default": "utf8",
+                  "options": [
+                    {
+                      "label": "UTF-8",
+                      "value": "utf8"
+                    },
+                    {
+                      "label": "Latin1",
+                      "value": "latin1"
+                    }
+                  ],
+                  "xs": 12,
+                  "sm": 6,
+                  "md": 4,
+                  "lg": 4,
+                  "xl": 4,
+                  "help": "Kodierung für nicht-numerische Texte beim Schreiben zum HomeServer"
+                },
+                {
                   "type": "checkbox",
                   "attr": "updateOnStart",
                   "label": "Beim Start aktualisieren",
@@ -350,6 +372,28 @@
                   "md": 4,
                   "lg": 4,
                   "xl": 4
+                },
+                {
+                  "type": "select",
+                  "attr": "textEncoding",
+                  "label": "Text-Encoding",
+                  "default": "utf8",
+                  "options": [
+                    {
+                      "label": "UTF-8",
+                      "value": "utf8"
+                    },
+                    {
+                      "label": "Latin1",
+                      "value": "latin1"
+                    }
+                  ],
+                  "xs": 12,
+                  "sm": 6,
+                  "md": 4,
+                  "lg": 4,
+                  "xl": 4,
+                  "help": "Kodierung für nicht-numerische Texte beim Schreiben zum HomeServer"
                 },
                 {
                   "type": "checkbox",

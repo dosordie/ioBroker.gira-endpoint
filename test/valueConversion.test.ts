@@ -20,6 +20,24 @@ describe("value conversion helpers", () => {
       assert.strictEqual(res.uidValue, Buffer.from("abc", "utf8").toString("base64"));
       assert.strictEqual(res.ackVal, "abc");
     });
+
+    it("encodes non-numeric text as UTF-8 by default", () => {
+      const res = encodeUidValue("Hauptwäsche", false, "utf8");
+      assert.strictEqual(res.uidValue, "SGF1cHR3w6RzY2hl");
+      assert.strictEqual(res.ackVal, "Hauptwäsche");
+    });
+
+    it("encodes non-numeric text as Latin1 when configured", () => {
+      const res = encodeUidValue("Hauptwäsche", false, "latin1");
+      assert.strictEqual(res.uidValue, "SGF1cHR35HNjaGU=");
+      assert.strictEqual(res.ackVal, "Hauptwäsche");
+    });
+
+    it("does not apply text encoding to numbers, booleans, or numeric strings", () => {
+      assert.strictEqual(encodeUidValue(1, false, "latin1").uidValue, "1");
+      assert.strictEqual(encodeUidValue(true, false, "latin1").uidValue, "1");
+      assert.strictEqual(encodeUidValue("123", false, "latin1").uidValue, "123");
+    });
   });
 
   describe("decodeAckValue", () => {
