@@ -1143,51 +1143,59 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (!state || !this.client)
             return;
         const mapped = this.forwardMap.get(id);
-        if (mapped) {
-            if (this.suppressStateChange.has(id)) {
-                this.log.debug(this.translate("Ignoring state change for %s because it was just updated from endpoint", id));
-                return;
-            }
-            const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, mapped.bool, mapped.textEncoding);
-            this.logOutgoingCoValue({
-                source: "mapping",
-                stateId: id,
-                key: mapped.key,
-                method,
-                ackVal,
-                uidValue,
-                bool: mapped.bool,
-                textEncoding: mapped.textEncoding,
-            });
-            this.client.call(mapped.key, method, uidValue);
-            const baseId = this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
-            this.keyIdMap.set(mapped.key, baseId);
-            this.idKeyMap.set(baseId, mapped.key);
-            this.setState(`${baseId}.value`, { val: ackVal, ack: true });
-            if (!state.ack) {
-                this.suppressStateChange.add(id);
-                this.setForeignState(id, { val: state.val, ack: true });
-                const supTimer = this.setTimeout(() => {
-                    this.suppressStateChange.delete(id);
-                    this.clearTimeout(supTimer);
-                }, 1000);
-            }
-            this.pendingUpdates.set(mapped.key, ackVal);
-            const timer = this.setTimeout(() => {
-                this.pendingUpdates.delete(mapped.key);
-                this.clearTimeout(timer);
-            }, 1000);
+        if (mapped && this.handleMappedStateChange(id, state, mapped))
             return;
+        if (this.handleArchiveStateChange(id, state))
+            return;
+        if (this.handleDirectCoStateChange(id, state))
+            return;
+    }
+    handleMappedStateChange(id, state, mapped) {
+        if (this.suppressStateChange.has(id)) {
+            this.log.debug(this.translate("Ignoring state change for %s because it was just updated from endpoint", id));
+            return true;
         }
+        const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, mapped.bool, mapped.textEncoding);
+        this.logOutgoingCoValue({
+            source: "mapping",
+            stateId: id,
+            key: mapped.key,
+            method,
+            ackVal,
+            uidValue,
+            bool: mapped.bool,
+            textEncoding: mapped.textEncoding,
+        });
+        this.client.call(mapped.key, method, uidValue);
+        const baseId = this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
+        this.keyIdMap.set(mapped.key, baseId);
+        this.idKeyMap.set(baseId, mapped.key);
+        this.setState(`${baseId}.value`, { val: ackVal, ack: true });
+        if (!state.ack) {
+            this.suppressStateChange.add(id);
+            this.setForeignState(id, { val: state.val, ack: true });
+            const supTimer = this.setTimeout(() => {
+                this.suppressStateChange.delete(id);
+                this.clearTimeout(supTimer);
+            }, 1000);
+        }
+        this.pendingUpdates.set(mapped.key, ackVal);
+        const timer = this.setTimeout(() => {
+            this.pendingUpdates.delete(mapped.key);
+            this.clearTimeout(timer);
+        }, 1000);
+        return true;
+    }
+    handleArchiveStateChange(id, state) {
         if (id.startsWith("DA@.")) {
             if (state.ack)
-                return;
+                return true;
             const parts = id.split(".");
             const action = parts.pop();
             const baseId = parts.join(".");
             const key = this.archiveIdKeyMap.get(baseId);
             if (!key || !action)
-                return;
+                return true;
             if (action === "meta") {
                 const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
                 if (prom) {
@@ -1214,7 +1222,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }
                 catch {
                     this.log.warn(this.translate("Invalid query parameters for %s: %s", id, state.val));
-                    return;
+                    return true;
                 }
                 const prom = this.client.call(key, "get", params, this.makeTag("get"));
                 if (prom) {
@@ -1231,19 +1239,19 @@ class GiraEndpointAdapter extends utils.Adapter {
                     });
                 }
             }
-            return;
+            return true;
         }
         if (id.startsWith("CO@.")) {
             const parts = id.split(".");
             const action = parts.pop();
             if (action === "meta") {
                 if (state.ack)
-                    return;
+                    return true;
                 const baseId = parts.join(".");
                 const key = this.idKeyMap.get(baseId) ??
                     this.normalizeKey(parts.slice(1).join("."));
                 if (!key)
-                    return;
+                    return true;
                 if (action === "meta") {
                     const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
                     if (prom) {
@@ -1259,17 +1267,20 @@ class GiraEndpointAdapter extends utils.Adapter {
                             this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
                         });
                     }
-                    return;
+                    return true;
                 }
             }
         }
+        return false;
+    }
+    handleDirectCoStateChange(id, state) {
         if (state.ack)
-            return;
+            return false;
         if (!id.startsWith("CO@."))
-            return;
+            return false;
         const parts = id.split(".");
         if (parts[parts.length - 1] !== "value")
-            return;
+            return false;
         const baseId = parts.slice(0, parts.length - 1).join(".");
         const key = this.idKeyMap.get(baseId) ??
             this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
@@ -1307,6 +1318,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.clearTimeout(timer);
         }, 1000);
         this.setState(id, { val: ackVal, ack: true });
+        return true;
     }
     handleHsRestartTrigger(id, state) {
         this.log.debug(this.translate("HomeServer restart trigger received (val=%s, ack=%s)", state?.val, state?.ack));

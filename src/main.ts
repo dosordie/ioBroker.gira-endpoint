@@ -82,6 +82,11 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     | string;
 }
 
+type ForwardMapping = {
+  key: string;
+  bool: boolean;
+  textEncoding: TextEncoding;
+};
 
 class GiraEndpointAdapter extends utils.Adapter {
   private client?: GiraClient;
@@ -90,7 +95,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private idKeyMap = new Map<string, string>();
   private keyDescMap = new Map<string, string>();
   private keyCaseMap = new Map<string, string>();
-  private forwardMap = new Map<string, { key: string; bool: boolean; textEncoding: TextEncoding }>();
+  private forwardMap = new Map<string, ForwardMapping>();
   private keyTextEncodingMap = new Map<string, TextEncoding>();
   private reverseMap = new Map<string, { stateId: string; bool: boolean; ack: boolean }>();
   private boolKeys = new Set<string>();
@@ -1334,57 +1339,70 @@ class GiraEndpointAdapter extends utils.Adapter {
     if (!state || !this.client) return;
 
     const mapped = this.forwardMap.get(id);
-    if (mapped) {
-      if (this.suppressStateChange.has(id)) {
-        this.log.debug(
-          this.translate(
-            "Ignoring state change for %s because it was just updated from endpoint",
-            id
-          )
-        );
-        return;
-      }
-      const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool, mapped.textEncoding);
-      this.logOutgoingCoValue({
-        source: "mapping",
-        stateId: id,
-        key: mapped.key,
-        method,
-        ackVal,
-        uidValue,
-        bool: mapped.bool,
-        textEncoding: mapped.textEncoding,
-      });
-      this.client.call(mapped.key, method, uidValue);
-      const baseId =
-        this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
-      this.keyIdMap.set(mapped.key, baseId);
-      this.idKeyMap.set(baseId, mapped.key);
-      this.setState(`${baseId}.value`, { val: ackVal, ack: true });
-      if (!state.ack) {
-        this.suppressStateChange.add(id);
-        this.setForeignState(id, { val: state.val, ack: true });
-        const supTimer = this.setTimeout(() => {
-          this.suppressStateChange.delete(id);
-          this.clearTimeout(supTimer);
-        }, 1000);
-      }
-      this.pendingUpdates.set(mapped.key, ackVal);
-      const timer = this.setTimeout(() => {
-        this.pendingUpdates.delete(mapped.key);
-        this.clearTimeout(timer);
-      }, 1000);
-      return;
+    if (mapped && this.handleMappedStateChange(id, state, mapped)) return;
+
+    if (this.handleArchiveStateChange(id, state)) return;
+
+    if (this.handleDirectCoStateChange(id, state)) return;
+  }
+
+  private handleMappedStateChange(
+    id: string,
+    state: ioBroker.State,
+    mapped: ForwardMapping
+  ): boolean {
+    if (this.suppressStateChange.has(id)) {
+      this.log.debug(
+        this.translate(
+          "Ignoring state change for %s because it was just updated from endpoint",
+          id
+        )
+      );
+      return true;
     }
+    const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool, mapped.textEncoding);
+    this.logOutgoingCoValue({
+      source: "mapping",
+      stateId: id,
+      key: mapped.key,
+      method,
+      ackVal,
+      uidValue,
+      bool: mapped.bool,
+      textEncoding: mapped.textEncoding,
+    });
+    this.client!.call(mapped.key, method, uidValue);
+    const baseId =
+      this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
+    this.keyIdMap.set(mapped.key, baseId);
+    this.idKeyMap.set(baseId, mapped.key);
+    this.setState(`${baseId}.value`, { val: ackVal, ack: true });
+    if (!state.ack) {
+      this.suppressStateChange.add(id);
+      this.setForeignState(id, { val: state.val, ack: true });
+      const supTimer = this.setTimeout(() => {
+        this.suppressStateChange.delete(id);
+        this.clearTimeout(supTimer);
+      }, 1000);
+    }
+    this.pendingUpdates.set(mapped.key, ackVal);
+    const timer = this.setTimeout(() => {
+      this.pendingUpdates.delete(mapped.key);
+      this.clearTimeout(timer);
+    }, 1000);
+    return true;
+  }
+
+  private handleArchiveStateChange(id: string, state: ioBroker.State): boolean {
     if (id.startsWith("DA@.")) {
-      if (state.ack) return;
+      if (state.ack) return true;
       const parts = id.split(".");
       const action = parts.pop();
       const baseId = parts.join(".");
       const key = this.archiveIdKeyMap.get(baseId);
-      if (!key || !action) return;
+      if (!key || !action) return true;
       if (action === "meta") {
-        const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
+        const prom = this.client!.call(key, "meta", undefined, this.makeTag("meta"));
         if (prom) {
           prom
             .then(async (resp: any) => {
@@ -1414,9 +1432,9 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.log.warn(
             this.translate("Invalid query parameters for %s: %s", id, state.val)
           );
-          return;
+          return true;
         }
-        const prom = this.client.call(key, "get", params, this.makeTag("get"));
+        const prom = this.client!.call(key, "get", params, this.makeTag("get"));
         if (prom) {
           prom
             .then((resp: any) => {
@@ -1437,21 +1455,21 @@ class GiraEndpointAdapter extends utils.Adapter {
             });
         }
       }
-      return;
+      return true;
     }
 
     if (id.startsWith("CO@.")) {
       const parts = id.split(".");
       const action = parts.pop();
       if (action === "meta") {
-        if (state.ack) return;
+        if (state.ack) return true;
         const baseId = parts.join(".");
         const key =
           this.idKeyMap.get(baseId) ??
           this.normalizeKey(parts.slice(1).join("."));
-        if (!key) return;
+        if (!key) return true;
         if (action === "meta") {
-          const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
+          const prom = this.client!.call(key, "meta", undefined, this.makeTag("meta"));
           if (prom) {
             prom
               .then(async (resp: any) => {
@@ -1471,15 +1489,19 @@ class GiraEndpointAdapter extends utils.Adapter {
                 );
               });
           }
-          return;
+          return true;
         }
       }
     }
 
-    if (state.ack) return;
-    if (!id.startsWith("CO@.")) return;
+    return false;
+  }
+
+  private handleDirectCoStateChange(id: string, state: ioBroker.State): boolean {
+    if (state.ack) return false;
+    if (!id.startsWith("CO@.")) return false;
     const parts = id.split(".");
-    if (parts[parts.length - 1] !== "value") return;
+    if (parts[parts.length - 1] !== "value") return false;
     const baseId = parts.slice(0, parts.length - 1).join(".");
     const key =
       this.idKeyMap.get(baseId) ??
@@ -1497,7 +1519,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       bool: boolKey,
       textEncoding,
     });
-    this.client.call(key, method, uidValue);
+    this.client!.call(key, method, uidValue);
     const mappedForeign = this.reverseMap.get(key);
     if (mappedForeign) {
       let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
@@ -1520,6 +1542,7 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.clearTimeout(timer);
     }, 1000);
     this.setState(id, { val: ackVal, ack: true });
+    return true;
   }
 
   private handleHsRestartTrigger(
