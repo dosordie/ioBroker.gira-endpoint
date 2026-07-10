@@ -38,6 +38,7 @@ const GiraClient_1 = require("./lib/GiraClient");
 const crypto_1 = require("crypto");
 const util_1 = require("util");
 const valueConversion_1 = require("./lib/valueConversion");
+const configParser_1 = require("./lib/configParser");
 class GiraEndpointAdapter extends utils.Adapter {
     formatLogValue(value, maxLength = 200) {
         let text;
@@ -179,144 +180,20 @@ class GiraEndpointAdapter extends utils.Adapter {
             const password = String(cfg.password ?? "");
             const authHeader = Boolean(cfg.authHeader);
             const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
-            const boolKeys = new Set();
-            const skipInitial = new Set();
-            const updateOnStartSources = [];
-            const keyTextEncodingMap = new Map();
-            this.keyCaseMap.clear();
-            const rawKeys = Array.isArray(cfg.endpointGroups)
-                ? cfg.endpointGroups.flatMap((g) => Array.isArray(g?.keys) ? g.keys : [])
-                : cfg.endpointKeys;
-            const endpointKeys = [];
-            if (Array.isArray(rawKeys)) {
-                for (const k of rawKeys) {
-                    if (typeof k === "object" && k) {
-                        if (k.enabled === false)
-                            continue;
-                        const rawKey = String(k.key ?? "").trim();
-                        const key = this.normalizeKey(rawKey);
-                        if (!key)
-                            continue;
-                        this.rememberKeyCase(key, rawKey || key);
-                        const name = String(k.name ?? "").trim();
-                        if (name)
-                            this.keyDescMap.set(key, name);
-                        const bool = Boolean(k.bool);
-                        if (bool)
-                            boolKeys.add(key);
-                        const textEncoding = (0, valueConversion_1.normalizeTextEncoding)(k.textEncoding);
-                        keyTextEncodingMap.set(key, textEncoding);
-                        const updateOnStart = k.updateOnStart !== false;
-                        if (!updateOnStart)
-                            skipInitial.add(key);
-                        if (updateOnStart) {
-                            const baseId = this.makeEndpointBaseId(key);
-                            updateOnStartSources.push({
-                                key,
-                                stateId: `${baseId}.value`,
-                                bool,
-                                foreign: false,
-                                textEncoding,
-                            });
-                        }
-                        endpointKeys.push(key);
-                    }
-                    else {
-                        const rawKey = String(k).trim();
-                        const key = this.normalizeKey(rawKey);
-                        if (!key)
-                            continue;
-                        this.rememberKeyCase(key, rawKey || key);
-                        endpointKeys.push(key);
-                    }
-                }
-            }
-            else {
-                const arr = String(rawKeys ?? "")
-                    .split(/[,;\s]+/)
-                    .map((k) => k.trim())
-                    .filter((k) => k);
-                for (const rawKey of arr) {
-                    const key = this.normalizeKey(rawKey);
-                    if (!key)
-                        continue;
-                    this.rememberKeyCase(key, rawKey);
-                    endpointKeys.push(key);
-                }
-            }
-            const forwardMap = new Map();
-            const reverseMap = new Map();
-            const mappingGroups = Array.isArray(cfg.mappingGroups)
-                ? cfg.mappingGroups
-                : Array.isArray(cfg.mappings)
-                    ? [{ mappings: cfg.mappings }]
-                    : [];
-            for (const g of mappingGroups) {
-                if (!g || typeof g !== "object")
-                    continue;
-                const list = g.mappings;
-                if (!Array.isArray(list))
-                    continue;
-                for (const m of list) {
-                    if (typeof m !== "object" || !m)
-                        continue;
-                    if (m.enabled === false)
-                        continue;
-                    const stateId = String(m.stateId ?? "").trim();
-                    const rawKey = String(m.key ?? "").trim();
-                    const key = this.normalizeKey(rawKey);
-                    if (!stateId || !key)
-                        continue;
-                    this.rememberKeyCase(key, rawKey || key);
-                    const name = String(m.name ?? "").trim();
-                    if (name)
-                        this.keyDescMap.set(key, name);
-                    const toEndpoint = m.toEndpoint !== false;
-                    const toState = Boolean(m.toState);
-                    const bool = Boolean(m.bool);
-                    const ack = m.ack !== false;
-                    const textEncoding = (0, valueConversion_1.normalizeTextEncoding)(m.textEncoding);
-                    if (!keyTextEncodingMap.has(key)) {
-                        keyTextEncodingMap.set(key, textEncoding);
-                    }
-                    const updateOnStart = m.updateOnStart !== false;
-                    if (!updateOnStart)
-                        skipInitial.add(key);
-                    if (toEndpoint) {
-                        forwardMap.set(stateId, { key, bool, textEncoding });
-                        if (bool)
-                            boolKeys.add(key);
-                        if (updateOnStart) {
-                            updateOnStartSources.push({
-                                key,
-                                stateId,
-                                bool,
-                                foreign: true,
-                                textEncoding,
-                            });
-                        }
-                    }
-                    if (toState) {
-                        reverseMap.set(key, { stateId, bool, ack });
-                        if (bool)
-                            boolKeys.add(key);
-                    }
-                    if (!endpointKeys.includes(key))
-                        endpointKeys.push(key);
-                }
-            }
-            this.forwardMap = forwardMap;
-            this.reverseMap = reverseMap;
-            this.boolKeys = boolKeys;
-            this.skipInitialUpdate = skipInitial;
-            this.initialSkipUpdate = new Set(skipInitial);
-            const uniqueSources = new Map();
-            for (const src of updateOnStartSources) {
-                const key = `${src.key}|${src.stateId}|${src.foreign ? "1" : "0"}`;
-                if (!uniqueSources.has(key))
-                    uniqueSources.set(key, src);
-            }
-            this.updateOnStartSources = Array.from(uniqueSources.values());
+            const parsed = (0, configParser_1.parseEndpointAndMappingConfig)(cfg, {
+                normalizeKey: this.normalizeKey.bind(this),
+                makeEndpointBaseId: this.makeEndpointBaseId.bind(this),
+            });
+            this.forwardMap = parsed.forwardMap;
+            this.reverseMap = parsed.reverseMap;
+            this.boolKeys = parsed.boolKeys;
+            this.keyDescMap = parsed.keyDescMap;
+            this.keyCaseMap = parsed.keyCaseMap;
+            this.skipInitialUpdate = parsed.skipInitialUpdate;
+            this.initialSkipUpdate = new Set(parsed.skipInitialUpdate);
+            this.updateOnStartSources = parsed.updateOnStartSources;
+            this.endpointKeys = parsed.endpointKeys;
+            this.keyTextEncodingMap = parsed.keyTextEncodingMap;
             this.archiveQueryDefaults.clear();
             const rawArchives = cfg.dataArchives;
             const archiveKeys = [];
@@ -373,12 +250,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                     this.archiveDescMap.set(key, key);
             }
             this.archiveKeys = archiveKeys;
-            for (const key of endpointKeys) {
+            for (const key of this.endpointKeys) {
                 if (!this.keyDescMap.has(key))
                     this.keyDescMap.set(key, key);
             }
-            this.endpointKeys = endpointKeys;
-            this.keyTextEncodingMap = keyTextEncodingMap;
             const endpointKeysText = this.endpointKeys.length
                 ? this.endpointKeys.join(", ")
                 : this.translate("(none)");
