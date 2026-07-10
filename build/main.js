@@ -172,18 +172,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                 native: {},
             });
             const cfg = this.config;
-            const host = String(cfg.host ?? "").trim();
-            const port = Number(cfg.port ?? 80);
-            const ssl = Boolean(cfg.ssl ?? false);
-            const path = "/endpoints/ws";
-            const username = String(cfg.username ?? "");
-            const password = String(cfg.password ?? "");
-            const authHeader = Boolean(cfg.authHeader);
-            const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
-            const parsed = (0, configParser_1.parseEndpointAndMappingConfig)(cfg, {
+            const parsed = (0, configParser_1.parseAdapterConfig)(cfg, {
                 normalizeKey: this.normalizeKey.bind(this),
+                normalizeArchiveKey: this.normalizeArchiveKey.bind(this),
                 makeEndpointBaseId: this.makeEndpointBaseId.bind(this),
             });
+            const { host, port, ssl, path, username, password, authHeader, pingIntervalMs, reconnect, ca, cert, key, rejectUnauthorized, } = parsed.connection;
             this.forwardMap = parsed.forwardMap;
             this.reverseMap = parsed.reverseMap;
             this.boolKeys = parsed.boolKeys;
@@ -194,62 +188,9 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.updateOnStartSources = parsed.updateOnStartSources;
             this.endpointKeys = parsed.endpointKeys;
             this.keyTextEncodingMap = parsed.keyTextEncodingMap;
-            this.archiveQueryDefaults.clear();
-            const rawArchives = cfg.dataArchives;
-            const archiveKeys = [];
-            if (Array.isArray(rawArchives)) {
-                for (const a of rawArchives) {
-                    if (typeof a === "object" && a) {
-                        if (a.enabled === false)
-                            continue;
-                        const key = this.normalizeArchiveKey(String(a.key ?? "").trim());
-                        if (!key)
-                            continue;
-                        const name = String(a.name ?? "").trim();
-                        if (name)
-                            this.archiveDescMap.set(key, name);
-                        const start = String(a.start ?? "").trim();
-                        const end = String(a.end ?? "").trim();
-                        let cols = a.columns;
-                        if (typeof cols === "string") {
-                            cols = cols
-                                .split(/[,;\s]+/)
-                                .map((c) => c.trim())
-                                .filter((c) => c);
-                        }
-                        const params = {};
-                        if (start)
-                            params.from = start;
-                        if (end)
-                            params.to = end;
-                        if (Array.isArray(cols) && cols.length)
-                            params.columns = cols;
-                        if (Object.keys(params).length) {
-                            this.archiveQueryDefaults.set(key, params);
-                        }
-                        archiveKeys.push(key);
-                    }
-                    else {
-                        const key = this.normalizeArchiveKey(String(a).trim());
-                        if (!key)
-                            continue;
-                        archiveKeys.push(key);
-                    }
-                }
-            }
-            else {
-                const arr = String(rawArchives ?? "")
-                    .split(/[,;\s]+/)
-                    .map((k) => k.trim())
-                    .filter((k) => k)
-                    .map((k) => this.normalizeArchiveKey(k));
-                archiveKeys.push(...arr);
-            }
-            for (const key of archiveKeys) {
-                if (!this.archiveDescMap.has(key))
-                    this.archiveDescMap.set(key, key);
-            }
-            this.archiveKeys = archiveKeys;
+            this.archiveKeys = parsed.archiveKeys;
+            this.archiveDescMap = parsed.archiveDescMap;
+            this.archiveQueryDefaults = parsed.archiveQueryDefaults;
             for (const key of this.endpointKeys) {
                 if (!this.keyDescMap.has(key))
                     this.keyDescMap.set(key, key);
@@ -428,11 +369,14 @@ class GiraEndpointAdapter extends utils.Adapter {
             catch {
                 /* ignore */
             }
-            const ca = cfg.ca ? String(cfg.ca) : undefined;
-            const cert = cfg.cert ? String(cfg.cert) : undefined;
-            const key = cfg.key ? String(cfg.key) : undefined;
-            const rejectUnauthorized = cfg.rejectUnauthorized !== undefined ? Boolean(cfg.rejectUnauthorized) : undefined;
-            const tls = { ca, cert, key, rejectUnauthorized };
+            const tls = {
+                ca: ca ? String(ca) : undefined,
+                cert: cert ? String(cert) : undefined,
+                key: key ? String(key) : undefined,
+                rejectUnauthorized: rejectUnauthorized !== undefined
+                    ? Boolean(rejectUnauthorized)
+                    : undefined,
+            };
             // Instantiate client once with all relevant options
             this.client = new GiraClient_1.GiraClient({
                 host,
@@ -444,8 +388,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                 authHeader,
                 pingIntervalMs,
                 reconnect: {
-                    minMs: cfg.reconnect?.minMs ?? 1000,
-                    maxMs: cfg.reconnect?.maxMs ?? 30000,
+                    minMs: reconnect?.minMs ?? 1000,
+                    maxMs: reconnect?.maxMs ?? 30000,
                 },
                 tls,
             });
