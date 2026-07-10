@@ -324,7 +324,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 await this.setObjectNotExistsAsync(`${baseId}.last`, {
                     type: "state",
                     common: {
-                        name: this.translate("last"),
+                        name: this.translate("Daten holen"),
                         type: "boolean",
                         role: "button",
                         read: true,
@@ -332,6 +332,16 @@ class GiraEndpointAdapter extends utils.Adapter {
                         def: false,
                     },
                     native: {},
+                });
+                await this.extendObjectAsync(`${baseId}.last`, {
+                    common: {
+                        name: this.translate("Daten holen"),
+                        type: "boolean",
+                        role: "button",
+                        read: true,
+                        write: true,
+                        def: false,
+                    },
                 });
                 await this.setObjectNotExistsAsync(`${baseId}.lastCnt`, {
                     type: "state",
@@ -1158,6 +1168,14 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
         return (0, archiveQuery_1.normalizeArchiveCols)(state?.val) ?? fallback;
     }
+    getMetaCols(metaResp) {
+        const cols = metaResp?.data?.cols;
+        if (!Array.isArray(cols))
+            return [];
+        return cols
+            .map((col) => String(col?.key ?? "").trim())
+            .filter(Boolean);
+    }
     async handleLastArchiveQuery(key, baseId, id) {
         try {
             await this.setStateAsync(id, { val: false, ack: true });
@@ -1170,16 +1188,18 @@ class GiraEndpointAdapter extends utils.Adapter {
             const lastCnt = await this.readNumberState(`${baseId}.lastCnt`, defaults?.lastCnt ?? 50);
             const blockSize = await this.readNumberState(`${baseId}.blockSize`, defaults?.blockSize ?? defaults?.size ?? 1);
             const cols = await this.readColsState(`${baseId}.cols`, defaults?.cols ?? []);
-            const queryParams = (0, archiveQuery_1.buildLastArchiveQuery)(metaResp, lastCnt, blockSize, cols);
+            const queryCols = cols.length ? cols : this.getMetaCols(metaResp);
+            const queryParams = (0, archiveQuery_1.buildLastArchiveQuery)(metaResp, lastCnt, blockSize, queryCols);
             if (!queryParams) {
                 this.log.warn(this.translate("Cannot build last archive query for %s because meta.stat.last is missing", key));
                 return;
             }
+            await this.setStateAsync(`${baseId}.query`, { val: JSON.stringify(queryParams), ack: true });
+            this.log.debug(this.translate("Fetching archive data for %s with query %s", key, JSON.stringify(queryParams)));
             const resp = await this.client.call(key, "get", queryParams, this.makeTag("get"));
             const data = JSON.stringify(resp.data);
             await this.setStateAsync(`${baseId}.data`, { val: data, ack: true });
             await this.setStateAsync(`${baseId}.lastResult`, { val: data, ack: true });
-            await this.setStateAsync(`${baseId}.query`, { val: JSON.stringify(queryParams), ack: true });
         }
         catch (err) {
             this.log.error(this.translate("Last archive query failed for %s: %s", key, err?.message || err));
