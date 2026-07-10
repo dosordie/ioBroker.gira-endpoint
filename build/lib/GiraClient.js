@@ -8,6 +8,7 @@ exports.codeToMessage = codeToMessage;
 exports.formatCallError = formatCallError;
 const events_1 = require("events");
 const ws_1 = __importDefault(require("ws"));
+const requestMatching_1 = require("./requestMatching");
 // Kein Listener-Limit (verhindert MaxListeners-Warnungen global hier)
 events_1.EventEmitter.defaultMaxListeners = 0;
 const BACKOFF_FACTOR = 1.7;
@@ -77,6 +78,7 @@ class GiraClient extends events_1.EventEmitter {
         this.awaitingPong = false;
         this.tagResolvers = new Map();
         this.requestTags = new Map();
+        this.tagRequestKeys = new Map();
         // Defaults + Merge ohne doppelte Literal-Keys (TS2783 vermeiden)
         const defaults = {
             host: "",
@@ -160,21 +162,17 @@ class GiraClient extends events_1.EventEmitter {
                             clearTimeout(resolver.timer);
                         resolver?.reject(err);
                         this.tagResolvers.delete(tag);
-                        if (payload?.request) {
-                            const reqKey = this.makeRequestKey(payload.request);
-                            this.requestTags.delete(reqKey);
-                        }
+                        this.clearRequestTag(tag, ...(0, requestMatching_1.makeRequestKeys)(payload?.request));
                     }
                     else if (payload?.request) {
-                        const reqKey = this.makeRequestKey(payload.request);
-                        const t = this.requestTags.get(reqKey);
+                        const { tag: t, requestKeys } = this.findRequestTag(payload.request);
                         if (t && this.tagResolvers.has(t)) {
                             const resolver = this.tagResolvers.get(t);
                             if (resolver?.timer)
                                 clearTimeout(resolver.timer);
                             resolver?.reject(err);
                             this.tagResolvers.delete(t);
-                            this.requestTags.delete(reqKey);
+                            this.clearRequestTag(t, ...requestKeys);
                         }
                     }
                     this.emit("error", err);
@@ -189,21 +187,17 @@ class GiraClient extends events_1.EventEmitter {
                         clearTimeout(resolver.timer);
                     resolver?.resolve(payload);
                     this.tagResolvers.delete(tag);
-                    if (payload?.request) {
-                        const reqKey = this.makeRequestKey(payload.request);
-                        this.requestTags.delete(reqKey);
-                    }
+                    this.clearRequestTag(tag, ...(0, requestMatching_1.makeRequestKeys)(payload?.request));
                 }
                 else if (payload?.request) {
-                    const reqKey = this.makeRequestKey(payload.request);
-                    const t = this.requestTags.get(reqKey);
+                    const { tag: t, requestKeys } = this.findRequestTag(payload.request);
                     if (t && this.tagResolvers.has(t)) {
                         const resolver = this.tagResolvers.get(t);
                         if (resolver?.timer)
                             clearTimeout(resolver.timer);
                         resolver?.resolve(payload);
                         this.tagResolvers.delete(t);
-                        this.requestTags.delete(reqKey);
+                        this.clearRequestTag(t, ...requestKeys);
                     }
                 }
             }
@@ -229,13 +223,23 @@ class GiraClient extends events_1.EventEmitter {
         }
     }
     makeRequestKey(obj) {
-        if (!obj || typeof obj !== "object")
-            return String(obj);
-        const keys = Object.keys(obj).sort();
-        const sorted = {};
-        for (const k of keys)
-            sorted[k] = obj[k];
-        return JSON.stringify(sorted);
+        return (0, requestMatching_1.makeRequestKey)(obj);
+    }
+    clearRequestTag(tag, ...requestKeys) {
+        const knownRequestKeys = this.tagRequestKeys.get(tag) ?? [];
+        const keys = new Set([...knownRequestKeys, ...requestKeys]);
+        for (const requestKey of keys)
+            this.requestTags.delete(requestKey);
+        this.tagRequestKeys.delete(tag);
+    }
+    findRequestTag(request) {
+        const requestKeys = (0, requestMatching_1.makeRequestKeys)(request);
+        for (const requestKey of requestKeys) {
+            const tag = this.requestTags.get(requestKey);
+            if (tag)
+                return { tag, requestKeys };
+        }
+        return { requestKeys };
     }
     call(key, method, params, tag, timeoutMs = 10000) {
         const param = { key, method };
@@ -250,15 +254,17 @@ class GiraClient extends events_1.EventEmitter {
         const msg = { type: "call", param };
         if (tag) {
             msg.tag = tag;
-            const reqKey = this.makeRequestKey(param);
+            const requestKeys = (0, requestMatching_1.makeRequestKeys)(param);
             return new Promise((resolve, reject) => {
                 const timer = setTimeout(() => {
                     reject(new Error(`Gira call failed: Timeout, key=${key}, method=${method}, tag=${tag}, params=${shorten(safeStringify(param) ?? String(param))}`));
                     this.tagResolvers.delete(tag);
-                    this.requestTags.delete(reqKey);
+                    this.clearRequestTag(tag, ...requestKeys);
                 }, timeoutMs);
                 this.tagResolvers.set(tag, { resolve, reject, timer });
-                this.requestTags.set(reqKey, tag);
+                this.tagRequestKeys.set(tag, requestKeys);
+                for (const requestKey of requestKeys)
+                    this.requestTags.set(requestKey, tag);
                 this.send(msg);
             });
         }
