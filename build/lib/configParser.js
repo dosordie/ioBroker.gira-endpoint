@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseEndpointAndMappingConfig = parseEndpointAndMappingConfig;
 exports.parseAdapterConfig = parseAdapterConfig;
 const valueConversion_1 = require("./valueConversion");
+const archiveQuery_1 = require("./archiveQuery");
 function rememberKeyCase(keyCaseMap, normalized, original) {
     if (!normalized)
         return;
@@ -183,25 +184,37 @@ function parseArchiveConfig(cfg, helpers) {
                 const name = String(a.name ?? "").trim();
                 if (name)
                     archiveDescMap.set(key, name);
-                const start = String(a.start ?? "").trim();
-                const end = String(a.end ?? "").trim();
-                let cols = a.columns;
-                if (typeof cols === "string") {
-                    cols = cols
-                        .split(/[,;\s]+/)
-                        .map((c) => c.trim())
-                        .filter((c) => c);
-                }
                 const params = {};
-                if (start)
-                    params.from = start;
-                if (end)
-                    params.to = end;
-                if (Array.isArray(cols) && cols.length)
-                    params.columns = cols;
-                if (Object.keys(params).length) {
-                    archiveQueryDefaults.set(key, params);
+                const startat = String(a.startat ?? "").trim();
+                const legacyStart = String(a.start ?? "").trim();
+                if ((0, archiveQuery_1.isArchiveStartAt)(startat)) {
+                    params.startat = startat;
                 }
+                else if ((0, archiveQuery_1.isArchiveStartAt)(legacyStart)) {
+                    params.startat = legacyStart;
+                }
+                const cnt = Number(a.cnt);
+                if (Number.isFinite(cnt))
+                    params.cnt = cnt;
+                const size = Number(a.size);
+                if (Number.isFinite(size))
+                    params.size = size;
+                const cols = (0, archiveQuery_1.normalizeArchiveCols)(a.cols ?? a.columns);
+                if (cols)
+                    params.cols = cols;
+                const rawLastCnt = Number(a.lastCnt);
+                params.lastCnt = Number.isFinite(rawLastCnt) ? rawLastCnt : 50;
+                const rawBlockSize = Number(a.blockSize);
+                params.blockSize = Number.isFinite(rawBlockSize)
+                    ? rawBlockSize
+                    : params.size ?? 1;
+                const mode = a.mode;
+                params.mode = mode === "manual" || mode === "last"
+                    ? mode
+                    : a.lastCnt !== undefined || a.blockSize !== undefined
+                        ? "last"
+                        : "manual";
+                archiveQueryDefaults.set(key, params);
                 archiveKeys.push(key);
             }
             else {

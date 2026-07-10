@@ -3,7 +3,8 @@ import { GiraClient, codeToMessage } from "./lib/GiraClient";
 import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
-import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource } from "./lib/configParser";
+import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults } from "./lib/configParser";
+import { buildLastArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
@@ -75,6 +76,13 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     | {
         key: string;
         name?: string;
+        startat?: string;
+        cnt?: number;
+        size?: number;
+        cols?: string[] | string;
+        mode?: "manual" | "last";
+        lastCnt?: number;
+        blockSize?: number;
         start?: string;
         end?: string;
         columns?: string[] | string;
@@ -107,10 +115,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveKeyIdMap = new Map<string, string>();
   private archiveIdKeyMap = new Map<string, string>();
   private archiveDescMap = new Map<string, string>();
-  private archiveQueryDefaults = new Map<
-    string,
-    { from?: string; to?: string; columns?: string[] }
-  >();
+  private archiveQueryDefaults = new Map<string, ArchiveQueryDefaults>();
   private fetchedMeta = new Set<string>();
 
 
@@ -424,8 +429,73 @@ class GiraEndpointAdapter extends utils.Adapter {
           },
           native: {},
         });
+        const defaults = this.archiveQueryDefaults.get(key);
+        await this.setObjectNotExistsAsync(`${baseId}.last`, {
+          type: "state",
+          common: {
+            name: this.translate("last"),
+            type: "boolean",
+            role: "button",
+            read: true,
+            write: true,
+            def: false,
+          },
+          native: {},
+        });
+        await this.setObjectNotExistsAsync(`${baseId}.lastCnt`, {
+          type: "state",
+          common: {
+            name: this.translate("lastCnt"),
+            type: "number",
+            role: "value",
+            read: true,
+            write: true,
+            def: defaults?.lastCnt ?? 50,
+          },
+          native: {},
+        });
+        await this.setObjectNotExistsAsync(`${baseId}.blockSize`, {
+          type: "state",
+          common: {
+            name: this.translate("blockSize"),
+            type: "number",
+            role: "value",
+            read: true,
+            write: true,
+            def: defaults?.blockSize ?? defaults?.size ?? 1,
+          },
+          native: {},
+        });
+        await this.setObjectNotExistsAsync(`${baseId}.cols`, {
+          type: "state",
+          common: {
+            name: this.translate("cols"),
+            type: "string",
+            role: "json",
+            read: true,
+            write: true,
+            def: JSON.stringify(defaults?.cols ?? []),
+          },
+          native: {},
+        });
+        await this.setObjectNotExistsAsync(`${baseId}.lastResult`, {
+          type: "state",
+          common: {
+            name: this.translate("lastResult"),
+            type: "string",
+            role: "json",
+            read: true,
+            write: false,
+          },
+          native: {},
+        });
+        await this.setStateAsync(`${baseId}.last`, { val: false, ack: true });
+        await this.setStateAsync(`${baseId}.lastCnt`, { val: defaults?.lastCnt ?? 50, ack: true });
+        await this.setStateAsync(`${baseId}.blockSize`, { val: defaults?.blockSize ?? defaults?.size ?? 1, ack: true });
+        await this.setStateAsync(`${baseId}.cols`, { val: JSON.stringify(defaults?.cols ?? []), ack: true });
         this.subscribeStates(`${baseId}.meta`);
         this.subscribeStates(`${baseId}.query`);
+        this.subscribeStates(`${baseId}.last`);
       }
 
       const validBaseIds = new Set(
@@ -531,16 +601,17 @@ class GiraEndpointAdapter extends utils.Adapter {
         for (const [key, params] of this.archiveQueryDefaults.entries()) {
           const baseId = this.archiveKeyIdMap.get(key);
           if (!baseId) continue;
-          const queryParams: any = {};
-          if (params.from) queryParams.from = params.from;
-          if (params.to) queryParams.to = params.to;
-          if (params.columns && params.columns.length)
-            queryParams.columns = params.columns;
+          if (params.mode === "last" && !params.startat) continue;
+          const queryParams = normalizeArchiveQuery(params);
           const prom = this.client!.call(key, "get", queryParams, this.makeTag("get"));
           if (prom) {
             prom
               .then((resp: any) => {
                 this.setState(`${baseId}.data`, {
+                  val: JSON.stringify(resp.data),
+                  ack: true,
+                });
+                this.setState(`${baseId}.lastResult`, {
                   val: JSON.stringify(resp.data),
                   ack: true,
                 });
@@ -1228,113 +1299,155 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private handleArchiveStateChange(id: string, state: ioBroker.State): boolean {
-    if (id.startsWith("DA@.")) {
-      if (state.ack) return true;
-      const parts = id.split(".");
-      const action = parts.pop();
-      const baseId = parts.join(".");
-      const key = this.archiveIdKeyMap.get(baseId);
-      if (!key || !action) return true;
-      if (action === "meta") {
-        const prom = this.client!.call(key, "meta", undefined, this.makeTag("meta"));
-        if (prom) {
-          prom
-            .then(async (resp: any) => {
-              await this.applyMeta(key, baseId, resp.data, true);
-              await this.setStateAsync(id, {
-                val: JSON.stringify(resp.data),
-                ack: true,
-              });
-            })
-            .catch((err: any) => {
-              this.log.error(
-                this.translate(
-                  "Meta call failed for %s: %s",
-                  key,
-                  err?.message || err
-                )
-              );
+    if (!id.startsWith("DA@.")) return false;
+    if (state.ack) return true;
+    const parts = id.split(".");
+    const action = parts.pop();
+    const baseId = parts.join(".");
+    const key = this.archiveIdKeyMap.get(baseId);
+    if (!key || !action) return true;
+
+    if (action === "meta") {
+      const prom = this.client!.call(key, "meta", undefined, this.makeTag("meta"));
+      if (prom) {
+        prom
+          .then(async (resp: any) => {
+            await this.applyMeta(key, baseId, resp.data, true);
+            await this.setStateAsync(id, {
+              val: JSON.stringify(resp.data),
+              ack: true,
             });
-        }
-      } else if (action === "query") {
-        let params: any;
-        try {
-          params =
-            typeof state.val === "string" ? JSON.parse(state.val) : state.val;
-          if (!params || typeof params !== "object") throw new Error();
-        } catch {
-          this.log.warn(
-            this.translate("Invalid query parameters for %s: %s", id, state.val)
-          );
-          return true;
-        }
-        const prom = this.client!.call(key, "get", params, this.makeTag("get"));
-        if (prom) {
-          prom
-            .then((resp: any) => {
-              this.setState(id, { val: state.val, ack: true });
-              this.setState(`${baseId}.data`, {
-                val: JSON.stringify(resp.data),
-                ack: true,
-              });
-            })
-            .catch((err: any) => {
-              this.log.error(
-                this.translate(
-                  "Get call failed for %s: %s",
-                  key,
-                  err?.message || err
-                )
-              );
-            });
-        }
+          })
+          .catch((err: any) => {
+            this.log.error(
+              this.translate(
+                "Meta call failed for %s: %s",
+                key,
+                err?.message || err
+              )
+            );
+          });
       }
       return true;
     }
 
-    if (id.startsWith("CO@.")) {
-      const parts = id.split(".");
-      const action = parts.pop();
-      if (action === "meta") {
-        if (state.ack) return true;
-        const baseId = parts.join(".");
-        const key =
-          this.idKeyMap.get(baseId) ??
-          this.normalizeKey(parts.slice(1).join("."));
-        if (!key) return true;
-        if (action === "meta") {
-          const prom = this.client!.call(key, "meta", undefined, this.makeTag("meta"));
-          if (prom) {
-            prom
-              .then(async (resp: any) => {
-                await this.applyMeta(key, baseId, resp.data);
-                await this.setStateAsync(id, {
-                  val: JSON.stringify(resp.data),
-                  ack: true,
-                });
-              })
-              .catch((err: any) => {
-                this.log.error(
-                  this.translate(
-                    "Meta call failed for %s: %s",
-                    key,
-                    err?.message || err
-                  )
-                );
-              });
-          }
-          return true;
-        }
-      }
+    if (action === "last") {
+      if (state.val !== true) return true;
+      void this.handleLastArchiveQuery(key, baseId, id);
+      return true;
     }
 
-    return false;
+    if (action === "query") {
+      let params: any;
+      try {
+        params = typeof state.val === "string" ? JSON.parse(state.val) : state.val;
+        if (!params || typeof params !== "object") throw new Error();
+      } catch {
+        this.log.warn(
+          this.translate("Invalid query parameters for %s: %s", id, state.val)
+        );
+        return true;
+      }
+      const queryParams = normalizeArchiveQuery(params);
+      const prom = this.client!.call(key, "get", queryParams, this.makeTag("get"));
+      if (prom) {
+        prom
+          .then((resp: any) => {
+            this.setState(id, { val: JSON.stringify(queryParams), ack: true });
+            const data = JSON.stringify(resp.data);
+            this.setState(`${baseId}.data`, { val: data, ack: true });
+            this.setState(`${baseId}.lastResult`, { val: data, ack: true });
+          })
+          .catch((err: any) => {
+            this.log.error(
+              this.translate("Get call failed for %s: %s", key, err?.message || err)
+            );
+          });
+      }
+      return true;
+    }
+
+    return true;
+  }
+
+  private async readNumberState(id: string, fallback: number): Promise<number> {
+    const state = await this.getStateAsync(id);
+    const num = Number(state?.val);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  private async readColsState(id: string, fallback: string[]): Promise<string[]> {
+    const state = await this.getStateAsync(id);
+    if (typeof state?.val === "string") {
+      try {
+        const parsed = JSON.parse(state.val);
+        return normalizeArchiveCols(parsed) ?? fallback;
+      } catch {
+        return normalizeArchiveCols(state.val) ?? fallback;
+      }
+    }
+    return normalizeArchiveCols(state?.val) ?? fallback;
+  }
+
+  private async handleLastArchiveQuery(key: string, baseId: string, id: string): Promise<void> {
+    try {
+      await this.setStateAsync(id, { val: false, ack: true });
+      const defaults = this.archiveQueryDefaults.get(key);
+      const metaResp = await this.client!.call(key, "meta", undefined, this.makeTag("meta"));
+      if (metaResp?.data !== undefined) {
+        await this.applyMeta(key, baseId, metaResp.data, true);
+        await this.setStateAsync(`${baseId}.meta`, { val: JSON.stringify(metaResp.data), ack: true });
+      }
+      const lastCnt = await this.readNumberState(`${baseId}.lastCnt`, defaults?.lastCnt ?? 50);
+      const blockSize = await this.readNumberState(`${baseId}.blockSize`, defaults?.blockSize ?? defaults?.size ?? 1);
+      const cols = await this.readColsState(`${baseId}.cols`, defaults?.cols ?? []);
+      const queryParams = buildLastArchiveQuery(metaResp, lastCnt, blockSize, cols);
+      if (!queryParams) {
+        this.log.warn(this.translate("Cannot build last archive query for %s because meta.stat.last is missing", key));
+        return;
+      }
+      const resp = await this.client!.call(key, "get", queryParams, this.makeTag("get"));
+      const data = JSON.stringify(resp.data);
+      await this.setStateAsync(`${baseId}.data`, { val: data, ack: true });
+      await this.setStateAsync(`${baseId}.lastResult`, { val: data, ack: true });
+      await this.setStateAsync(`${baseId}.query`, { val: JSON.stringify(queryParams), ack: true });
+    } catch (err: any) {
+      this.log.error(this.translate("Last archive query failed for %s: %s", key, err?.message || err));
+    }
   }
 
   private handleDirectCoStateChange(id: string, state: ioBroker.State): boolean {
     if (state.ack) return false;
     if (!id.startsWith("CO@.")) return false;
     const parts = id.split(".");
+    if (parts[parts.length - 1] === "meta") {
+      const baseId = parts.slice(0, parts.length - 1).join(".");
+      const key =
+        this.idKeyMap.get(baseId) ??
+        this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
+      if (!key) return true;
+      const prom = this.client!.call(key, "meta", undefined, this.makeTag("meta"));
+      if (prom) {
+        prom
+          .then(async (resp: any) => {
+            await this.applyMeta(key, baseId, resp.data);
+            await this.setStateAsync(id, {
+              val: JSON.stringify(resp.data),
+              ack: true,
+            });
+          })
+          .catch((err: any) => {
+            this.log.error(
+              this.translate(
+                "Meta call failed for %s: %s",
+                key,
+                err?.message || err
+              )
+            );
+          });
+      }
+      return true;
+    }
     if (parts[parts.length - 1] !== "value") return false;
     const baseId = parts.slice(0, parts.length - 1).join(".");
     const key =
