@@ -333,6 +333,16 @@ class GiraEndpointAdapter extends utils.Adapter {
                     },
                     native: {},
                 });
+                await this.extendObjectAsync(`${baseId}.last`, {
+                    common: {
+                        name: this.translate("Daten holen"),
+                        type: "boolean",
+                        role: "button",
+                        read: true,
+                        write: true,
+                        def: false,
+                    },
+                });
                 await this.setObjectNotExistsAsync(`${baseId}.lastCnt`, {
                     type: "state",
                     common: {
