@@ -1,5 +1,105 @@
 const assert = require("assert").strict;
 const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion");
+const { parseAdapterConfig } = require("../build/lib/configParser");
+
+const parserHelpers = {
+  normalizeKey: (rawKey) => {
+    const key = String(rawKey ?? "").trim().replace(/^CO@/i, "").toUpperCase();
+    return key ? `CO@${key}` : "";
+  },
+  normalizeArchiveKey: (rawKey) => {
+    const key = String(rawKey ?? "").trim().replace(/^DA@/i, "").toUpperCase();
+    return key ? `DA@${key}` : "";
+  },
+  makeEndpointBaseId: (key) => `CO@.${String(key).replace(/^CO@/i, "")}`,
+};
+
+const parsedConnection = parseAdapterConfig(
+  { host: " 1.2.3.4 ", port: "81", ssl: true, authHeader: true },
+  parserHelpers
+);
+assert.equal(parsedConnection.connection.host, "1.2.3.4");
+assert.equal(parsedConnection.connection.port, 81);
+assert.equal(parsedConnection.connection.ssl, true);
+assert.equal(parsedConnection.connection.path, "/endpoints/ws");
+assert.equal(parsedConnection.connection.authHeader, true);
+
+const parsedArchiveString = parseAdapterConfig(
+  { dataArchives: "Archiv1 Archiv2" },
+  parserHelpers
+);
+assert.deepStrictEqual(parsedArchiveString.archiveKeys, ["DA@ARCHIV1", "DA@ARCHIV2"]);
+
+const parsedArchiveObject = parseAdapterConfig(
+  {
+    dataArchives: [
+      {
+        key: "Archiv1",
+        name: "Mein Archiv",
+        start: "2024-01-01",
+        end: "2024-01-31",
+        columns: "a b,c",
+      },
+    ],
+  },
+  parserHelpers
+);
+assert.equal(parsedArchiveObject.archiveDescMap.get("DA@ARCHIV1"), "Mein Archiv");
+assert.deepStrictEqual(parsedArchiveObject.archiveQueryDefaults.get("DA@ARCHIV1"), {
+  from: "2024-01-01",
+  to: "2024-01-31",
+  columns: ["a", "b", "c"],
+});
+
+const parsedEndpointMapping = parseAdapterConfig(
+  {
+    endpointGroups: [
+      {
+        keys: [
+          { key: "licht", textEncoding: "latin1", updateOnStart: true },
+        ],
+      },
+    ],
+    mappingGroups: [
+      {
+        mappings: [
+          {
+            stateId: "alias.0.licht",
+            key: "licht",
+            toEndpoint: true,
+            toState: true,
+            updateOnStart: true,
+            textEncoding: "latin1",
+          },
+          {
+            stateId: "alias.0.licht",
+            key: "licht",
+            toEndpoint: true,
+            updateOnStart: true,
+            textEncoding: "latin1",
+          },
+        ],
+      },
+    ],
+  },
+  parserHelpers
+);
+assert.equal(parsedEndpointMapping.keyTextEncodingMap.get("CO@LICHT"), "latin1");
+assert.deepStrictEqual(parsedEndpointMapping.forwardMap.get("alias.0.licht"), {
+  key: "CO@LICHT",
+  bool: false,
+  textEncoding: "latin1",
+});
+assert.deepStrictEqual(parsedEndpointMapping.reverseMap.get("CO@LICHT"), {
+  stateId: "alias.0.licht",
+  bool: false,
+  ack: true,
+});
+assert.equal(
+  parsedEndpointMapping.updateOnStartSources.filter((src) => src.stateId === "alias.0.licht").length,
+  1
+);
+
 
 // Cover critical text encoding conversions in the test entrypoint run by npm test.
 assert.equal(

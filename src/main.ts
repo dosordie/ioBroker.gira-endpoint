@@ -3,7 +3,7 @@ import { GiraClient, codeToMessage } from "./lib/GiraClient";
 import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
-import { parseEndpointAndMappingConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource } from "./lib/configParser";
+import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource } from "./lib/configParser";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
@@ -242,19 +242,27 @@ class GiraEndpointAdapter extends utils.Adapter {
       });
 
       const cfg = this.config as unknown as AdapterConfig;
-      const host = String(cfg.host ?? "").trim();
-      const port = Number(cfg.port ?? 80);
-      const ssl = Boolean(cfg.ssl ?? false);
-      const path = "/endpoints/ws";
-      const username = String(cfg.username ?? "");
-      const password = String(cfg.password ?? "");
-      const authHeader = Boolean(cfg.authHeader);
-      const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
-
-      const parsed = parseEndpointAndMappingConfig(cfg, {
+      const parsed = parseAdapterConfig(cfg, {
         normalizeKey: this.normalizeKey.bind(this),
+        normalizeArchiveKey: this.normalizeArchiveKey.bind(this),
         makeEndpointBaseId: this.makeEndpointBaseId.bind(this),
       });
+      const {
+        host,
+        port,
+        ssl,
+        path,
+        username,
+        password,
+        authHeader,
+        pingIntervalMs,
+        reconnect,
+        ca,
+        cert,
+        key,
+        rejectUnauthorized,
+      } = parsed.connection;
+
       this.forwardMap = parsed.forwardMap;
       this.reverseMap = parsed.reverseMap;
       this.boolKeys = parsed.boolKeys;
@@ -266,52 +274,9 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.endpointKeys = parsed.endpointKeys;
       this.keyTextEncodingMap = parsed.keyTextEncodingMap;
 
-      this.archiveQueryDefaults.clear();
-      const rawArchives = cfg.dataArchives;
-      const archiveKeys: string[] = [];
-      if (Array.isArray(rawArchives)) {
-        for (const a of rawArchives) {
-          if (typeof a === "object" && a) {
-            if ((a as any).enabled === false) continue;
-            const key = this.normalizeArchiveKey(String((a as any).key ?? "").trim());
-            if (!key) continue;
-            const name = String((a as any).name ?? "").trim();
-            if (name) this.archiveDescMap.set(key, name);
-            const start = String((a as any).start ?? "").trim();
-            const end = String((a as any).end ?? "").trim();
-            let cols: any = (a as any).columns;
-            if (typeof cols === "string") {
-              cols = cols
-                .split(/[,;\s]+/)
-                .map((c: string) => c.trim())
-                .filter((c: string) => c);
-            }
-            const params: { from?: string; to?: string; columns?: string[] } = {};
-            if (start) params.from = start;
-            if (end) params.to = end;
-            if (Array.isArray(cols) && cols.length) params.columns = cols;
-            if (Object.keys(params).length) {
-              this.archiveQueryDefaults.set(key, params);
-            }
-            archiveKeys.push(key);
-          } else {
-            const key = this.normalizeArchiveKey(String(a).trim());
-            if (!key) continue;
-            archiveKeys.push(key);
-          }
-        }
-      } else {
-        const arr = String(rawArchives ?? "")
-          .split(/[,;\s]+/)
-          .map((k) => k.trim())
-          .filter((k) => k)
-          .map((k) => this.normalizeArchiveKey(k));
-        archiveKeys.push(...arr);
-      }
-      for (const key of archiveKeys) {
-        if (!this.archiveDescMap.has(key)) this.archiveDescMap.set(key, key);
-      }
-      this.archiveKeys = archiveKeys;
+      this.archiveKeys = parsed.archiveKeys;
+      this.archiveDescMap = parsed.archiveDescMap;
+      this.archiveQueryDefaults = parsed.archiveQueryDefaults;
 
       for (const key of this.endpointKeys) {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
@@ -517,11 +482,15 @@ class GiraEndpointAdapter extends utils.Adapter {
         /* ignore */
       }
 
-      const ca = cfg.ca ? String(cfg.ca) : undefined;
-      const cert = cfg.cert ? String(cfg.cert) : undefined;
-      const key = cfg.key ? String(cfg.key) : undefined;
-      const rejectUnauthorized = cfg.rejectUnauthorized !== undefined ? Boolean(cfg.rejectUnauthorized) : undefined;
-      const tls = { ca, cert, key, rejectUnauthorized };
+      const tls = {
+        ca: ca ? String(ca) : undefined,
+        cert: cert ? String(cert) : undefined,
+        key: key ? String(key) : undefined,
+        rejectUnauthorized:
+          rejectUnauthorized !== undefined
+            ? Boolean(rejectUnauthorized)
+            : undefined,
+      };
 
       // Instantiate client once with all relevant options
       this.client = new GiraClient({
@@ -534,8 +503,8 @@ class GiraEndpointAdapter extends utils.Adapter {
         authHeader,
         pingIntervalMs,
         reconnect: {
-          minMs: cfg.reconnect?.minMs ?? 1000,
-          maxMs: cfg.reconnect?.maxMs ?? 30000,
+          minMs: reconnect?.minMs ?? 1000,
+          maxMs: reconnect?.maxMs ?? 30000,
         },
         tls,
       });

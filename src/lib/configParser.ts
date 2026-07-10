@@ -1,6 +1,18 @@
 import { normalizeTextEncoding, TextEncoding } from "./valueConversion";
 
 export type AdapterConfigLike = {
+  host?: string;
+  port?: number;
+  ssl?: boolean;
+  username?: string;
+  password?: string;
+  authHeader?: boolean;
+  pingIntervalMs?: number;
+  reconnect?: { minMs?: number; maxMs?: number };
+  ca?: string;
+  cert?: string;
+  key?: string;
+  rejectUnauthorized?: boolean;
   endpointKeys?:
     | string[]
     | {
@@ -50,6 +62,52 @@ export type AdapterConfigLike = {
       textEncoding?: TextEncoding;
     }[];
   }[];
+  dataArchives?:
+    | string[]
+    | {
+        key: string;
+        name?: string;
+        start?: string;
+        end?: string;
+        columns?: string[] | string;
+        enabled?: boolean;
+      }[]
+    | string;
+};
+
+export type ConnectionConfig = {
+  host: string;
+  port: number;
+  ssl: boolean;
+  path: string;
+  username: string;
+  password: string;
+  authHeader: boolean;
+  pingIntervalMs: number;
+  reconnect?: { minMs?: number; maxMs?: number };
+  ca?: string;
+  cert?: string;
+  key?: string;
+  rejectUnauthorized?: boolean;
+};
+
+export type ArchiveQueryDefaults = {
+  from?: string;
+  to?: string;
+  columns?: string[];
+};
+
+export type ParsedAdapterConfig = ParsedEndpointMappingConfig & {
+  connection: ConnectionConfig;
+  archiveKeys: string[];
+  archiveDescMap: Map<string, string>;
+  archiveQueryDefaults: Map<string, ArchiveQueryDefaults>;
+};
+
+export type ConfigParserHelpers = {
+  normalizeKey: (rawKey: string) => string;
+  normalizeArchiveKey: (rawKey: string) => string;
+  makeEndpointBaseId: (key: string) => string;
 };
 
 export type ForwardMapping = {
@@ -250,5 +308,87 @@ export function parseEndpointAndMappingConfig(
     keyCaseMap,
     skipInitialUpdate,
     updateOnStartSources: Array.from(uniqueSources.values()),
+  };
+}
+
+
+function parseArchiveConfig(
+  cfg: AdapterConfigLike,
+  helpers: Pick<ConfigParserHelpers, "normalizeArchiveKey">
+): Pick<ParsedAdapterConfig, "archiveKeys" | "archiveDescMap" | "archiveQueryDefaults"> {
+  const archiveDescMap = new Map<string, string>();
+  const archiveQueryDefaults = new Map<string, ArchiveQueryDefaults>();
+  const rawArchives = cfg.dataArchives;
+  const archiveKeys: string[] = [];
+  if (Array.isArray(rawArchives)) {
+    for (const a of rawArchives) {
+      if (typeof a === "object" && a) {
+        if ((a as any).enabled === false) continue;
+        const key = helpers.normalizeArchiveKey(String((a as any).key ?? "").trim());
+        if (!key) continue;
+        const name = String((a as any).name ?? "").trim();
+        if (name) archiveDescMap.set(key, name);
+        const start = String((a as any).start ?? "").trim();
+        const end = String((a as any).end ?? "").trim();
+        let cols: any = (a as any).columns;
+        if (typeof cols === "string") {
+          cols = cols
+            .split(/[,;\s]+/)
+            .map((c: string) => c.trim())
+            .filter((c: string) => c);
+        }
+        const params: ArchiveQueryDefaults = {};
+        if (start) params.from = start;
+        if (end) params.to = end;
+        if (Array.isArray(cols) && cols.length) params.columns = cols;
+        if (Object.keys(params).length) {
+          archiveQueryDefaults.set(key, params);
+        }
+        archiveKeys.push(key);
+      } else {
+        const key = helpers.normalizeArchiveKey(String(a).trim());
+        if (!key) continue;
+        archiveKeys.push(key);
+      }
+    }
+  } else {
+    const arr = String(rawArchives ?? "")
+      .split(/[,;\s]+/)
+      .map((k) => k.trim())
+      .filter((k) => k)
+      .map((k) => helpers.normalizeArchiveKey(k));
+    archiveKeys.push(...arr);
+  }
+  for (const key of archiveKeys) {
+    if (!archiveDescMap.has(key)) archiveDescMap.set(key, key);
+  }
+  return { archiveKeys, archiveDescMap, archiveQueryDefaults };
+}
+
+export function parseAdapterConfig(
+  cfg: AdapterConfigLike,
+  helpers: ConfigParserHelpers
+): ParsedAdapterConfig {
+  const endpointMapping = parseEndpointAndMappingConfig(cfg, helpers);
+  const archiveConfig = parseArchiveConfig(cfg, helpers);
+
+  return {
+    ...endpointMapping,
+    ...archiveConfig,
+    connection: {
+      host: String(cfg.host ?? "").trim(),
+      port: Number(cfg.port ?? 80),
+      ssl: Boolean(cfg.ssl ?? false),
+      path: "/endpoints/ws",
+      username: String(cfg.username ?? ""),
+      password: String(cfg.password ?? ""),
+      authHeader: Boolean(cfg.authHeader),
+      pingIntervalMs: Number(cfg.pingIntervalMs ?? 30000),
+      reconnect: cfg.reconnect,
+      ca: cfg.ca,
+      cert: cfg.cert,
+      key: cfg.key,
+      rejectUnauthorized: cfg.rejectUnauthorized,
+    },
   };
 }

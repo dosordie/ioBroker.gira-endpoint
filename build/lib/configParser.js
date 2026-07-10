@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseEndpointAndMappingConfig = parseEndpointAndMappingConfig;
+exports.parseAdapterConfig = parseAdapterConfig;
 const valueConversion_1 = require("./valueConversion");
 function rememberKeyCase(keyCaseMap, normalized, original) {
     if (!normalized)
@@ -164,5 +165,87 @@ function parseEndpointAndMappingConfig(cfg, helpers) {
         keyCaseMap,
         skipInitialUpdate,
         updateOnStartSources: Array.from(uniqueSources.values()),
+    };
+}
+function parseArchiveConfig(cfg, helpers) {
+    const archiveDescMap = new Map();
+    const archiveQueryDefaults = new Map();
+    const rawArchives = cfg.dataArchives;
+    const archiveKeys = [];
+    if (Array.isArray(rawArchives)) {
+        for (const a of rawArchives) {
+            if (typeof a === "object" && a) {
+                if (a.enabled === false)
+                    continue;
+                const key = helpers.normalizeArchiveKey(String(a.key ?? "").trim());
+                if (!key)
+                    continue;
+                const name = String(a.name ?? "").trim();
+                if (name)
+                    archiveDescMap.set(key, name);
+                const start = String(a.start ?? "").trim();
+                const end = String(a.end ?? "").trim();
+                let cols = a.columns;
+                if (typeof cols === "string") {
+                    cols = cols
+                        .split(/[,;\s]+/)
+                        .map((c) => c.trim())
+                        .filter((c) => c);
+                }
+                const params = {};
+                if (start)
+                    params.from = start;
+                if (end)
+                    params.to = end;
+                if (Array.isArray(cols) && cols.length)
+                    params.columns = cols;
+                if (Object.keys(params).length) {
+                    archiveQueryDefaults.set(key, params);
+                }
+                archiveKeys.push(key);
+            }
+            else {
+                const key = helpers.normalizeArchiveKey(String(a).trim());
+                if (!key)
+                    continue;
+                archiveKeys.push(key);
+            }
+        }
+    }
+    else {
+        const arr = String(rawArchives ?? "")
+            .split(/[,;\s]+/)
+            .map((k) => k.trim())
+            .filter((k) => k)
+            .map((k) => helpers.normalizeArchiveKey(k));
+        archiveKeys.push(...arr);
+    }
+    for (const key of archiveKeys) {
+        if (!archiveDescMap.has(key))
+            archiveDescMap.set(key, key);
+    }
+    return { archiveKeys, archiveDescMap, archiveQueryDefaults };
+}
+function parseAdapterConfig(cfg, helpers) {
+    const endpointMapping = parseEndpointAndMappingConfig(cfg, helpers);
+    const archiveConfig = parseArchiveConfig(cfg, helpers);
+    return {
+        ...endpointMapping,
+        ...archiveConfig,
+        connection: {
+            host: String(cfg.host ?? "").trim(),
+            port: Number(cfg.port ?? 80),
+            ssl: Boolean(cfg.ssl ?? false),
+            path: "/endpoints/ws",
+            username: String(cfg.username ?? ""),
+            password: String(cfg.password ?? ""),
+            authHeader: Boolean(cfg.authHeader),
+            pingIntervalMs: Number(cfg.pingIntervalMs ?? 30000),
+            reconnect: cfg.reconnect,
+            ca: cfg.ca,
+            cert: cfg.cert,
+            key: cfg.key,
+            rejectUnauthorized: cfg.rejectUnauthorized,
+        },
     };
 }
