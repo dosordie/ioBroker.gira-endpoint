@@ -1,5 +1,6 @@
 {
   "type": "tabs",
+  "i18n": false,
   "items": {
     "settingsTab": {
       "type": "panel",
@@ -209,6 +210,28 @@
                   "xl": 4
                 },
                 {
+                  "type": "select",
+                  "attr": "textEncoding",
+                  "label": "Text-Encoding",
+                  "default": "utf8",
+                  "options": [
+                    {
+                      "label": "UTF-8",
+                      "value": "utf8"
+                    },
+                    {
+                      "label": "Latin1",
+                      "value": "latin1"
+                    }
+                  ],
+                  "xs": 12,
+                  "sm": 6,
+                  "md": 4,
+                  "lg": 4,
+                  "xl": 4,
+                  "help": "Kodierung für nicht-numerische Texte beim Schreiben zum HomeServer"
+                },
+                {
                   "type": "checkbox",
                   "attr": "updateOnStart",
                   "label": "Beim Start aktualisieren",
@@ -234,24 +257,24 @@
           "text": "Liste der Homeserver Endpunkt IDs die abonniert werden und zusätzlich in einen anderes ioBroker Objekt geschrieben / von dort gelesen werden",
           "size": 2
         },
-          "mappingGroups": {
-            "type": "accordion",
-            "label": "Hier Gruppen erstellen und die Endpunkt IDs und ioBroker Objekte eintragen",
-            "titleAttr": "group",
-            "items": [
-              {
-                "type": "text",
-                "attr": "group",
-                "label": "Gruppenname",
-                "xs": 12,
-                "sm": 12,
-                "md": 6,
-                "lg": 6,
-                "xl": 6,
-                "validator": "data.group.length > 0",
-                "validatorErrorText": "Pflichtfeld",
-                "validatorNoSaveOnError": true
-              },
+        "mappingGroups": {
+          "type": "accordion",
+          "label": "Hier Gruppen erstellen und die Endpunkt IDs und ioBroker Objekte eintragen",
+          "titleAttr": "group",
+          "items": [
+            {
+              "type": "text",
+              "attr": "group",
+              "label": "Gruppenname",
+              "xs": 12,
+              "sm": 12,
+              "md": 6,
+              "lg": 6,
+              "xl": 6,
+              "validator": "data.group.length > 0",
+              "validatorErrorText": "Pflichtfeld",
+              "validatorNoSaveOnError": true
+            },
             {
               "newLine": true,
               "type": "accordion",
@@ -352,6 +375,28 @@
                   "xl": 4
                 },
                 {
+                  "type": "select",
+                  "attr": "textEncoding",
+                  "label": "Text-Encoding",
+                  "default": "utf8",
+                  "options": [
+                    {
+                      "label": "UTF-8",
+                      "value": "utf8"
+                    },
+                    {
+                      "label": "Latin1",
+                      "value": "latin1"
+                    }
+                  ],
+                  "xs": 12,
+                  "sm": 6,
+                  "md": 4,
+                  "lg": 4,
+                  "xl": 4,
+                  "help": "Kodierung für nicht-numerische Texte beim Schreiben zum HomeServer"
+                },
+                {
                   "type": "checkbox",
                   "attr": "updateOnStart",
                   "label": "Beim Start aktualisieren",
@@ -378,8 +423,9 @@
           "size": 2
         },
         "dataArchives": {
-          "type": "table",
-          "label": "Hier die Datenarchiv IDs ohne das DA@ eintragen",
+          "type": "accordion",
+          "label": "Datenarchive",
+          "titleAttr": "key",
           "xs": 12,
           "sm": 12,
           "md": 12,
@@ -390,6 +436,11 @@
               "type": "text",
               "attr": "key",
               "label": "DA@",
+              "xs": 12,
+              "sm": 12,
+              "md": 4,
+              "lg": 4,
+              "xl": 4,
               "validator": "((data.key || '').trim().length > 0) && !((data.key || '').trim().toUpperCase().startsWith('DA@'))",
               "validatorErrorText": "Pflichtfeld, ohne führendes DA@",
               "validatorNoSaveOnError": true
@@ -397,28 +448,118 @@
             {
               "type": "text",
               "attr": "name",
-              "label": "Beschreibung"
+              "label": "Beschreibung",
+              "xs": 12,
+              "sm": 12,
+              "md": 5,
+              "lg": 5,
+              "xl": 5
             },
             {
               "type": "checkbox",
               "attr": "enabled",
               "label": "Aktiviert",
-              "default": true
+              "default": true,
+              "xs": 12,
+              "sm": 12,
+              "md": 3,
+              "lg": 3,
+              "xl": 3
+            },
+            {
+              "newLine": true,
+              "type": "select",
+              "attr": "mode",
+              "label": "Modus",
+              "default": "manual",
+              "options": [
+                {
+                  "label": "Manuell",
+                  "value": "manual"
+                },
+                {
+                  "label": "Letzte Blöcke",
+                  "value": "last"
+                }
+              ],
+              "help": "Manuell: Abruf beim Start mit Startzeit/Anzahl/Blockgröße. Letzte Blöcke: Abruf per Button im Objektbaum.",
+              "xs": 12,
+              "sm": 12,
+              "md": 6,
+              "lg": 6,
+              "xl": 6
             },
             {
               "type": "text",
-              "attr": "start",
-              "label": "Startzeit"
+              "attr": "cols",
+              "label": "Spalten",
+              "help": "#Index oder Schlüssel, z. B. #1 #2 oder endpointmap",
+              "xs": 12,
+              "sm": 12,
+              "md": 6,
+              "lg": 6,
+              "xl": 6
             },
             {
+              "newLine": true,
               "type": "text",
-              "attr": "end",
-              "label": "Endzeit"
+              "attr": "startat",
+              "label": "Startzeit",
+              "help": "Format YYMMDDHHMM, z. B. 2607100800 = 10.07.2026 08:00",
+              "xs": 12,
+              "sm": 12,
+              "md": 4,
+              "lg": 4,
+              "xl": 4
             },
             {
-              "type": "text",
-              "attr": "columns",
-              "label": "Spalten"
+              "type": "number",
+              "attr": "cnt",
+              "label": "Blöcke",
+              "min": 1,
+              "default": 50,
+              "xs": 12,
+              "sm": 12,
+              "md": 4,
+              "lg": 4,
+              "xl": 4
+            },
+            {
+              "type": "number",
+              "attr": "size",
+              "label": "Blockgröße min",
+              "min": 1,
+              "default": 1,
+              "xs": 12,
+              "sm": 12,
+              "md": 4,
+              "lg": 4,
+              "xl": 4
+            },
+            {
+              "newLine": true,
+              "type": "number",
+              "attr": "lastCnt",
+              "label": "Letzte Blöcke",
+              "min": 1,
+              "default": 50,
+              "xs": 12,
+              "sm": 12,
+              "md": 6,
+              "lg": 6,
+              "xl": 6
+            },
+            {
+              "type": "number",
+              "attr": "blockSize",
+              "label": "Blockgröße min",
+              "min": 1,
+              "default": 1,
+              "xs": 12,
+              "sm": 12,
+              "md": 6,
+              "lg": 6,
+              "xl": 6
             }
           ]
         }

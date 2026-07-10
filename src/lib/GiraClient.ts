@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import WebSocket from "ws";
+import { makeRequestKey, makeRequestKeys } from "./requestMatching";
 
 // Kein Listener-Limit (verhindert MaxListeners-Warnungen global hier)
 EventEmitter.defaultMaxListeners = 0;
@@ -21,6 +22,45 @@ const STATUS_CODE_MESSAGES: Record<number, string> = {
 
 export function codeToMessage(code: number): string {
   return STATUS_CODE_MESSAGES[code] || `Error code ${code}`;
+}
+
+function shorten(value: string, maxLength = 200): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
+function safeStringify(value: any): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.stringify(value, (key, val) => {
+      const lower = String(key).toLowerCase();
+      if (lower.includes("password") || lower.includes("authorization")) {
+        return "[redacted]";
+      }
+      return val;
+    });
+  } catch {
+    return String(value);
+  }
+}
+
+export function formatCallError(payload: any, fallbackRequest?: any): string {
+  const code = Number(payload?.code);
+  const message = payload?.message || payload?.error || codeToMessage(code);
+  const request = payload?.request ?? fallbackRequest;
+  const source = payload?.param ?? payload?.data ?? request ?? {};
+  const key = payload?.key ?? source?.key;
+  const method = payload?.method ?? source?.method;
+  const value = payload?.value ?? source?.value;
+  const params = payload?.params ?? source?.params ?? source?.param;
+  const tag = payload?.tag ?? payload?.context;
+  const parts = [`code=${Number.isNaN(code) ? payload?.code : code}`, message];
+  if (key !== undefined) parts.push(`key=${key}`);
+  if (method !== undefined) parts.push(`method=${method}`);
+  if (value !== undefined) parts.push(`value=${shorten(safeStringify(value) ?? String(value))}`);
+  if (params !== undefined) parts.push(`params=${shorten(safeStringify(params) ?? String(params))}`);
+  if (tag !== undefined) parts.push(`tag=${tag}`);
+  if (request !== undefined) parts.push(`request=${shorten(safeStringify(request) ?? String(request))}`);
+  return `Gira call failed: ${parts.join(", ")}`;
 }
 
 interface ReconnectOptions {
@@ -75,6 +115,7 @@ export class GiraClient extends EventEmitter {
     }
   >();
   private requestTags = new Map<string, string>();
+  private tagRequestKeys = new Map<string, string[]>();
 
   constructor(opts: GiraClientOptions) {
     super();
@@ -158,31 +199,24 @@ export class GiraClient extends EventEmitter {
           payload.code !== undefined &&
           payload.code !== 0
         ) {
-          const msg =
-            (payload as any).message ||
-            (payload as any).error ||
-            codeToMessage(payload.code);
           const tag = (payload as any).tag;
-          const err: any = new Error(msg);
+          const fallbackRequest = payload?.request;
+          const err: any = new Error(formatCallError(payload, fallbackRequest));
           err.code = payload.code;
           if (tag && this.tagResolvers.has(tag)) {
             const resolver = this.tagResolvers.get(tag);
             if (resolver?.timer) clearTimeout(resolver.timer as any);
             resolver?.reject(err);
             this.tagResolvers.delete(tag);
-            if (payload?.request) {
-              const reqKey = this.makeRequestKey(payload.request);
-              this.requestTags.delete(reqKey);
-            }
+            this.clearRequestTag(tag, ...makeRequestKeys(payload?.request));
           } else if (payload?.request) {
-            const reqKey = this.makeRequestKey(payload.request);
-            const t = this.requestTags.get(reqKey);
+            const { tag: t, requestKeys } = this.findRequestTag(payload.request);
             if (t && this.tagResolvers.has(t)) {
               const resolver = this.tagResolvers.get(t);
               if (resolver?.timer) clearTimeout(resolver.timer as any);
               resolver?.reject(err);
               this.tagResolvers.delete(t);
-              this.requestTags.delete(reqKey);
+              this.clearRequestTag(t, ...requestKeys);
             }
           }
           this.emit("error", err);
@@ -196,19 +230,15 @@ export class GiraClient extends EventEmitter {
           if (resolver?.timer) clearTimeout(resolver.timer as any);
           resolver?.resolve(payload);
           this.tagResolvers.delete(tag);
-          if (payload?.request) {
-            const reqKey = this.makeRequestKey(payload.request);
-            this.requestTags.delete(reqKey);
-          }
+          this.clearRequestTag(tag, ...makeRequestKeys(payload?.request));
         } else if (payload?.request) {
-          const reqKey = this.makeRequestKey(payload.request);
-          const t = this.requestTags.get(reqKey);
+          const { tag: t, requestKeys } = this.findRequestTag(payload.request);
           if (t && this.tagResolvers.has(t)) {
             const resolver = this.tagResolvers.get(t);
             if (resolver?.timer) clearTimeout(resolver.timer as any);
             resolver?.resolve(payload);
             this.tagResolvers.delete(t);
-            this.requestTags.delete(reqKey);
+            this.clearRequestTag(t, ...requestKeys);
           }
         }
       } catch (err) {
@@ -236,11 +266,23 @@ export class GiraClient extends EventEmitter {
   }
 
   private makeRequestKey(obj: any): string {
-    if (!obj || typeof obj !== "object") return String(obj);
-    const keys = Object.keys(obj).sort();
-    const sorted: any = {};
-    for (const k of keys) sorted[k] = obj[k];
-    return JSON.stringify(sorted);
+    return makeRequestKey(obj);
+  }
+
+  private clearRequestTag(tag: string, ...requestKeys: string[]): void {
+    const knownRequestKeys = this.tagRequestKeys.get(tag) ?? [];
+    const keys = new Set([...knownRequestKeys, ...requestKeys]);
+    for (const requestKey of keys) this.requestTags.delete(requestKey);
+    this.tagRequestKeys.delete(tag);
+  }
+
+  private findRequestTag(request: any): { tag?: string; requestKeys: string[] } {
+    const requestKeys = makeRequestKeys(request);
+    for (const requestKey of requestKeys) {
+      const tag = this.requestTags.get(requestKey);
+      if (tag) return { tag, requestKeys };
+    }
+    return { requestKeys };
   }
 
   public call(
@@ -261,15 +303,16 @@ export class GiraClient extends EventEmitter {
     const msg: any = { type: "call", param };
     if (tag) {
       msg.tag = tag;
-      const reqKey = this.makeRequestKey(param);
+      const requestKeys = makeRequestKeys(param);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error("Timeout"));
+          reject(new Error(`Gira call failed: Timeout, key=${key}, method=${method}, tag=${tag}, params=${shorten(safeStringify(param) ?? String(param))}`));
           this.tagResolvers.delete(tag);
-          this.requestTags.delete(reqKey);
+          this.clearRequestTag(tag, ...requestKeys);
         }, timeoutMs);
         this.tagResolvers.set(tag, { resolve, reject, timer });
-        this.requestTags.set(reqKey, tag);
+        this.tagRequestKeys.set(tag, requestKeys);
+        for (const requestKey of requestKeys) this.requestTags.set(requestKey, tag);
         this.send(msg);
       });
     }
@@ -286,7 +329,7 @@ export class GiraClient extends EventEmitter {
       msg.tag = tag;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error("Timeout"));
+          reject(new Error(`Gira select failed: Timeout, tag=${tag}, params=${shorten(safeStringify(filter) ?? String(filter))}`));
           this.tagResolvers.delete(tag);
         }, timeoutMs);
         this.tagResolvers.set(tag, { resolve, reject, timer });
@@ -319,12 +362,6 @@ export class GiraClient extends EventEmitter {
       const num = Number(v);
       if (!isNaN(num)) {
         v = num;
-      } else {
-        try {
-          v = Buffer.from(v, "base64").toString("utf8");
-        } catch {
-          // ignorieren, wenn keine gültige Base64
-        }
       }
     }
     return v;

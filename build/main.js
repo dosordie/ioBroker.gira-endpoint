@@ -33,85 +33,30 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.encodeUidValue = encodeUidValue;
-exports.decodeAckValue = decodeAckValue;
 const utils = __importStar(require("@iobroker/adapter-core"));
 const GiraClient_1 = require("./lib/GiraClient");
 const crypto_1 = require("crypto");
 const util_1 = require("util");
-function encodeUidValue(val, boolMode) {
-    let method = "set";
-    let uidValue = val;
-    let ackVal = val;
-    if (boolMode) {
-        if (typeof uidValue === "boolean") {
-            ackVal = uidValue;
-            uidValue = uidValue ? "1" : "0";
-        }
-        else if (typeof uidValue === "number") {
-            ackVal = uidValue !== 0;
-            uidValue = uidValue ? "1" : "0";
-        }
-        else if (typeof uidValue === "string") {
-            if (uidValue === "true" || uidValue === "false") {
-                ackVal = uidValue === "true";
-                uidValue = ackVal ? "1" : "0";
-            }
-            else if (uidValue === "toggle") {
-                uidValue = "1";
-                method = "toggle";
-            }
-            else if (!isNaN(Number(uidValue))) {
-                const num = Number(uidValue);
-                ackVal = num !== 0;
-                uidValue = num ? "1" : "0";
-            }
-            else {
-                ackVal = uidValue;
-                uidValue = Buffer.from(uidValue, "utf8").toString("base64");
-            }
-        }
-    }
-    else {
-        if (typeof uidValue === "boolean") {
-            ackVal = uidValue ? 1 : 0;
-            uidValue = uidValue ? "1" : "0";
-        }
-        else if (typeof uidValue === "string") {
-            if (uidValue === "true" || uidValue === "false") {
-                ackVal = uidValue === "true" ? 1 : 0;
-                uidValue = uidValue === "true" ? "1" : "0";
-            }
-            else if (uidValue === "toggle") {
-                uidValue = "1";
-                method = "toggle";
-            }
-            else if (isNaN(Number(uidValue))) {
-                uidValue = Buffer.from(uidValue, "utf8").toString("base64");
-            }
-        }
-    }
-    return { uidValue: String(uidValue), ackVal, method };
-}
-function decodeAckValue(val, boolMode) {
-    if (boolMode) {
-        if (typeof val === "number")
-            return { value: val !== 0, type: "boolean" };
-        if (typeof val === "string")
-            return { value: val !== "0", type: "boolean" };
-        return { value: Boolean(val), type: "boolean" };
-    }
-    else {
-        if (typeof val === "boolean")
-            return { value: val ? 1 : 0, type: "number" };
-        if (typeof val === "number")
-            return { value: val, type: "number" };
-        if (typeof val === "string")
-            return { value: val, type: "string" };
-        return { value: val, type: "mixed" };
-    }
-}
+const valueConversion_1 = require("./lib/valueConversion");
+const configParser_1 = require("./lib/configParser");
+const archiveQuery_1 = require("./lib/archiveQuery");
 class GiraEndpointAdapter extends utils.Adapter {
+    formatLogValue(value, maxLength = 200) {
+        let text;
+        try {
+            text = typeof value === "string" ? JSON.stringify(value) : JSON.stringify(value);
+        }
+        catch {
+            text = String(value);
+        }
+        if (text === undefined)
+            text = String(value);
+        return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+    }
+    logOutgoingCoValue(args) {
+        const statePart = args.stateId ? ` stateId=${args.stateId}` : "";
+        this.log.debug(`Sending CO value source=${args.source}${statePart} key=${args.key} method=${args.method} ackVal=${this.formatLogValue(args.ackVal)} uidValue=${this.formatLogValue(args.uidValue)} bool=${args.bool} textEncoding=${args.textEncoding}`);
+    }
     notifyAdmin(message) {
         this.sendTo("admin", "messageBox", {
             title: "gira-endpoint",
@@ -129,6 +74,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.keyDescMap = new Map();
         this.keyCaseMap = new Map();
         this.forwardMap = new Map();
+        this.keyTextEncodingMap = new Map();
         this.reverseMap = new Map();
         this.boolKeys = new Set();
         this.suppressStateChange = new Set();
@@ -227,204 +173,29 @@ class GiraEndpointAdapter extends utils.Adapter {
                 native: {},
             });
             const cfg = this.config;
-            const host = String(cfg.host ?? "").trim();
-            const port = Number(cfg.port ?? 80);
-            const ssl = Boolean(cfg.ssl ?? false);
-            const path = "/endpoints/ws";
-            const username = String(cfg.username ?? "");
-            const password = String(cfg.password ?? "");
-            const authHeader = Boolean(cfg.authHeader);
-            const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
-            const boolKeys = new Set();
-            const skipInitial = new Set();
-            const updateOnStartSources = [];
-            this.keyCaseMap.clear();
-            const rawKeys = Array.isArray(cfg.endpointGroups)
-                ? cfg.endpointGroups.flatMap((g) => Array.isArray(g?.keys) ? g.keys : [])
-                : cfg.endpointKeys;
-            const endpointKeys = [];
-            if (Array.isArray(rawKeys)) {
-                for (const k of rawKeys) {
-                    if (typeof k === "object" && k) {
-                        if (k.enabled === false)
-                            continue;
-                        const rawKey = String(k.key ?? "").trim();
-                        const key = this.normalizeKey(rawKey);
-                        if (!key)
-                            continue;
-                        this.rememberKeyCase(key, rawKey || key);
-                        const name = String(k.name ?? "").trim();
-                        if (name)
-                            this.keyDescMap.set(key, name);
-                        const bool = Boolean(k.bool);
-                        if (bool)
-                            boolKeys.add(key);
-                        const updateOnStart = k.updateOnStart !== false;
-                        if (!updateOnStart)
-                            skipInitial.add(key);
-                        if (updateOnStart) {
-                            const baseId = this.makeEndpointBaseId(key);
-                            updateOnStartSources.push({
-                                key,
-                                stateId: `${baseId}.value`,
-                                bool,
-                                foreign: false,
-                            });
-                        }
-                        endpointKeys.push(key);
-                    }
-                    else {
-                        const rawKey = String(k).trim();
-                        const key = this.normalizeKey(rawKey);
-                        if (!key)
-                            continue;
-                        this.rememberKeyCase(key, rawKey || key);
-                        endpointKeys.push(key);
-                    }
-                }
-            }
-            else {
-                const arr = String(rawKeys ?? "")
-                    .split(/[,;\s]+/)
-                    .map((k) => k.trim())
-                    .filter((k) => k);
-                for (const rawKey of arr) {
-                    const key = this.normalizeKey(rawKey);
-                    if (!key)
-                        continue;
-                    this.rememberKeyCase(key, rawKey);
-                    endpointKeys.push(key);
-                }
-            }
-            const forwardMap = new Map();
-            const reverseMap = new Map();
-            const mappingGroups = Array.isArray(cfg.mappingGroups)
-                ? cfg.mappingGroups
-                : Array.isArray(cfg.mappings)
-                    ? [{ mappings: cfg.mappings }]
-                    : [];
-            for (const g of mappingGroups) {
-                if (!g || typeof g !== "object")
-                    continue;
-                const list = g.mappings;
-                if (!Array.isArray(list))
-                    continue;
-                for (const m of list) {
-                    if (typeof m !== "object" || !m)
-                        continue;
-                    if (m.enabled === false)
-                        continue;
-                    const stateId = String(m.stateId ?? "").trim();
-                    const rawKey = String(m.key ?? "").trim();
-                    const key = this.normalizeKey(rawKey);
-                    if (!stateId || !key)
-                        continue;
-                    this.rememberKeyCase(key, rawKey || key);
-                    const name = String(m.name ?? "").trim();
-                    if (name)
-                        this.keyDescMap.set(key, name);
-                    const toEndpoint = m.toEndpoint !== false;
-                    const toState = Boolean(m.toState);
-                    const bool = Boolean(m.bool);
-                    const ack = m.ack !== false;
-                    const updateOnStart = m.updateOnStart !== false;
-                    if (!updateOnStart)
-                        skipInitial.add(key);
-                    if (toEndpoint) {
-                        forwardMap.set(stateId, { key, bool });
-                        if (bool)
-                            boolKeys.add(key);
-                        if (updateOnStart) {
-                            updateOnStartSources.push({
-                                key,
-                                stateId,
-                                bool,
-                                foreign: true,
-                            });
-                        }
-                    }
-                    if (toState) {
-                        reverseMap.set(key, { stateId, bool, ack });
-                        if (bool)
-                            boolKeys.add(key);
-                    }
-                    if (!endpointKeys.includes(key))
-                        endpointKeys.push(key);
-                }
-            }
-            this.forwardMap = forwardMap;
-            this.reverseMap = reverseMap;
-            this.boolKeys = boolKeys;
-            this.skipInitialUpdate = skipInitial;
-            this.initialSkipUpdate = new Set(skipInitial);
-            const uniqueSources = new Map();
-            for (const src of updateOnStartSources) {
-                const key = `${src.key}|${src.stateId}|${src.foreign ? "1" : "0"}`;
-                if (!uniqueSources.has(key))
-                    uniqueSources.set(key, src);
-            }
-            this.updateOnStartSources = Array.from(uniqueSources.values());
-            this.archiveQueryDefaults.clear();
-            const rawArchives = cfg.dataArchives;
-            const archiveKeys = [];
-            if (Array.isArray(rawArchives)) {
-                for (const a of rawArchives) {
-                    if (typeof a === "object" && a) {
-                        if (a.enabled === false)
-                            continue;
-                        const key = this.normalizeArchiveKey(String(a.key ?? "").trim());
-                        if (!key)
-                            continue;
-                        const name = String(a.name ?? "").trim();
-                        if (name)
-                            this.archiveDescMap.set(key, name);
-                        const start = String(a.start ?? "").trim();
-                        const end = String(a.end ?? "").trim();
-                        let cols = a.columns;
-                        if (typeof cols === "string") {
-                            cols = cols
-                                .split(/[,;\s]+/)
-                                .map((c) => c.trim())
-                                .filter((c) => c);
-                        }
-                        const params = {};
-                        if (start)
-                            params.from = start;
-                        if (end)
-                            params.to = end;
-                        if (Array.isArray(cols) && cols.length)
-                            params.columns = cols;
-                        if (Object.keys(params).length) {
-                            this.archiveQueryDefaults.set(key, params);
-                        }
-                        archiveKeys.push(key);
-                    }
-                    else {
-                        const key = this.normalizeArchiveKey(String(a).trim());
-                        if (!key)
-                            continue;
-                        archiveKeys.push(key);
-                    }
-                }
-            }
-            else {
-                const arr = String(rawArchives ?? "")
-                    .split(/[,;\s]+/)
-                    .map((k) => k.trim())
-                    .filter((k) => k)
-                    .map((k) => this.normalizeArchiveKey(k));
-                archiveKeys.push(...arr);
-            }
-            for (const key of archiveKeys) {
-                if (!this.archiveDescMap.has(key))
-                    this.archiveDescMap.set(key, key);
-            }
-            this.archiveKeys = archiveKeys;
-            for (const key of endpointKeys) {
+            const parsed = (0, configParser_1.parseAdapterConfig)(cfg, {
+                normalizeKey: this.normalizeKey.bind(this),
+                normalizeArchiveKey: this.normalizeArchiveKey.bind(this),
+                makeEndpointBaseId: this.makeEndpointBaseId.bind(this),
+            });
+            const { host, port, ssl, path, username, password, authHeader, pingIntervalMs, reconnect, ca, cert, key, rejectUnauthorized, } = parsed.connection;
+            this.forwardMap = parsed.forwardMap;
+            this.reverseMap = parsed.reverseMap;
+            this.boolKeys = parsed.boolKeys;
+            this.keyDescMap = parsed.keyDescMap;
+            this.keyCaseMap = parsed.keyCaseMap;
+            this.skipInitialUpdate = parsed.skipInitialUpdate;
+            this.initialSkipUpdate = new Set(parsed.skipInitialUpdate);
+            this.updateOnStartSources = parsed.updateOnStartSources;
+            this.endpointKeys = parsed.endpointKeys;
+            this.keyTextEncodingMap = parsed.keyTextEncodingMap;
+            this.archiveKeys = parsed.archiveKeys;
+            this.archiveDescMap = parsed.archiveDescMap;
+            this.archiveQueryDefaults = parsed.archiveQueryDefaults;
+            for (const key of this.endpointKeys) {
                 if (!this.keyDescMap.has(key))
                     this.keyDescMap.set(key, key);
             }
-            this.endpointKeys = endpointKeys;
             const endpointKeysText = this.endpointKeys.length
                 ? this.endpointKeys.join(", ")
                 : this.translate("(none)");
@@ -549,8 +320,83 @@ class GiraEndpointAdapter extends utils.Adapter {
                     },
                     native: {},
                 });
+                const defaults = this.archiveQueryDefaults.get(key);
+                await this.setObjectNotExistsAsync(`${baseId}.last`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("Daten holen"),
+                        type: "boolean",
+                        role: "button",
+                        read: true,
+                        write: true,
+                        def: false,
+                    },
+                    native: {},
+                });
+                await this.extendObjectAsync(`${baseId}.last`, {
+                    common: {
+                        name: this.translate("Daten holen"),
+                        type: "boolean",
+                        role: "button",
+                        read: true,
+                        write: true,
+                        def: false,
+                    },
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.lastCnt`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("lastCnt"),
+                        type: "number",
+                        role: "value",
+                        read: true,
+                        write: true,
+                        def: defaults?.lastCnt ?? 50,
+                    },
+                    native: {},
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.blockSize`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("blockSize"),
+                        type: "number",
+                        role: "value",
+                        read: true,
+                        write: true,
+                        def: defaults?.blockSize ?? defaults?.size ?? 1,
+                    },
+                    native: {},
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.cols`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("cols"),
+                        type: "string",
+                        role: "json",
+                        read: true,
+                        write: true,
+                        def: JSON.stringify(defaults?.cols ?? []),
+                    },
+                    native: {},
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.lastResult`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("lastResult"),
+                        type: "string",
+                        role: "json",
+                        read: true,
+                        write: false,
+                    },
+                    native: {},
+                });
+                await this.setStateAsync(`${baseId}.last`, { val: false, ack: true });
+                await this.setStateAsync(`${baseId}.lastCnt`, { val: defaults?.lastCnt ?? 50, ack: true });
+                await this.setStateAsync(`${baseId}.blockSize`, { val: defaults?.blockSize ?? defaults?.size ?? 1, ack: true });
+                await this.setStateAsync(`${baseId}.cols`, { val: JSON.stringify(defaults?.cols ?? []), ack: true });
                 this.subscribeStates(`${baseId}.meta`);
                 this.subscribeStates(`${baseId}.query`);
+                this.subscribeStates(`${baseId}.last`);
             }
             const validBaseIds = new Set(this.endpointKeys.map((k) => this.makeEndpointBaseId(k)));
             const validArchiveBases = new Set(this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`));
@@ -599,11 +445,14 @@ class GiraEndpointAdapter extends utils.Adapter {
             catch {
                 /* ignore */
             }
-            const ca = cfg.ca ? String(cfg.ca) : undefined;
-            const cert = cfg.cert ? String(cfg.cert) : undefined;
-            const key = cfg.key ? String(cfg.key) : undefined;
-            const rejectUnauthorized = cfg.rejectUnauthorized !== undefined ? Boolean(cfg.rejectUnauthorized) : undefined;
-            const tls = { ca, cert, key, rejectUnauthorized };
+            const tls = {
+                ca: ca ? String(ca) : undefined,
+                cert: cert ? String(cert) : undefined,
+                key: key ? String(key) : undefined,
+                rejectUnauthorized: rejectUnauthorized !== undefined
+                    ? Boolean(rejectUnauthorized)
+                    : undefined,
+            };
             // Instantiate client once with all relevant options
             this.client = new GiraClient_1.GiraClient({
                 host,
@@ -615,8 +464,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                 authHeader,
                 pingIntervalMs,
                 reconnect: {
-                    minMs: cfg.reconnect?.minMs ?? 1000,
-                    maxMs: cfg.reconnect?.maxMs ?? 30000,
+                    minMs: reconnect?.minMs ?? 1000,
+                    maxMs: reconnect?.maxMs ?? 30000,
                 },
                 tls,
             });
@@ -640,18 +489,20 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const baseId = this.archiveKeyIdMap.get(key);
                     if (!baseId)
                         continue;
-                    const queryParams = {};
-                    if (params.from)
-                        queryParams.from = params.from;
-                    if (params.to)
-                        queryParams.to = params.to;
-                    if (params.columns && params.columns.length)
-                        queryParams.columns = params.columns;
+                    if (params.mode === "last")
+                        continue;
+                    const queryParams = (0, archiveQuery_1.normalizeArchiveQuery)(params);
+                    if (!(0, archiveQuery_1.isExecutableArchiveQuery)(queryParams))
+                        continue;
                     const prom = this.client.call(key, "get", queryParams, this.makeTag("get"));
                     if (prom) {
                         prom
                             .then((resp) => {
                             this.setState(`${baseId}.data`, {
+                                val: JSON.stringify(resp.data),
+                                ack: true,
+                            });
+                            this.setState(`${baseId}.lastResult`, {
                                 val: JSON.stringify(resp.data),
                                 ack: true,
                             });
@@ -883,8 +734,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                         continue;
                     }
                     const boolKey = this.boolKeys.has(normalized);
+                    const textEncoding = this.keyTextEncodingMap.get(normalized) ?? "utf8";
                     const rawVal = data.value;
-                    const decoded = decodeAckValue(rawVal, boolKey);
+                    const decoded = (0, valueConversion_1.decodeCoValue)(rawVal, boolKey, textEncoding);
                     const value = decoded.value;
                     const type = decoded.type;
                     const pending = this.pendingUpdates.get(normalized);
@@ -1004,7 +856,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                         if (isValue) {
                             const mappedForeign = this.reverseMap.get(normalized);
                             if (mappedForeign) {
-                                let mappedVal = decodeAckValue(val, mappedForeign.bool).value;
+                                let mappedVal = (0, valueConversion_1.decodeAckValue)(val, mappedForeign.bool).value;
                                 this.log.debug(this.translate("Updating mapped foreign state %s -> %s", mappedForeign.stateId, JSON.stringify(mappedVal)));
                                 this.suppressStateChange.add(mappedForeign.stateId);
                                 await this.setForeignStateAsync(mappedForeign.stateId, {
@@ -1112,7 +964,17 @@ class GiraEndpointAdapter extends utils.Adapter {
                     : await this.getStateAsync(src.stateId);
                 if (!state)
                     continue;
-                const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool);
+                const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, src.bool, src.textEncoding);
+                this.logOutgoingCoValue({
+                    source: "updateOnStart",
+                    stateId: src.stateId,
+                    key: src.key,
+                    method,
+                    ackVal,
+                    uidValue,
+                    bool: src.bool,
+                    textEncoding: src.textEncoding,
+                });
                 this.client.call(src.key, method, uidValue);
                 const baseId = this.keyIdMap.get(src.key) ?? this.makeEndpointBaseId(src.key);
                 this.keyIdMap.set(src.key, baseId);
@@ -1120,7 +982,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 await this.setStateAsync(`${baseId}.value`, { val: ackVal, ack: true });
                 const mappedForeign = this.reverseMap.get(src.key);
                 if (mappedForeign) {
-                    const mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
+                    const mappedVal = (0, valueConversion_1.decodeAckValue)(ackVal, mappedForeign.bool).value;
                     this.suppressStateChange.add(mappedForeign.stateId);
                     await this.setForeignStateAsync(mappedForeign.stateId, {
                         val: mappedVal,
@@ -1178,132 +1040,221 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (!state || !this.client)
             return;
         const mapped = this.forwardMap.get(id);
-        if (mapped) {
-            if (this.suppressStateChange.has(id)) {
-                this.log.debug(this.translate("Ignoring state change for %s because it was just updated from endpoint", id));
-                return;
-            }
-            const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool);
-            this.client.call(mapped.key, method, uidValue);
-            const baseId = this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
-            this.keyIdMap.set(mapped.key, baseId);
-            this.idKeyMap.set(baseId, mapped.key);
-            this.setState(`${baseId}.value`, { val: ackVal, ack: true });
-            if (!state.ack) {
-                this.suppressStateChange.add(id);
-                this.setForeignState(id, { val: state.val, ack: true });
-                const supTimer = this.setTimeout(() => {
-                    this.suppressStateChange.delete(id);
-                    this.clearTimeout(supTimer);
-                }, 1000);
-            }
-            this.pendingUpdates.set(mapped.key, ackVal);
-            const timer = this.setTimeout(() => {
-                this.pendingUpdates.delete(mapped.key);
-                this.clearTimeout(timer);
+        if (mapped && this.handleMappedStateChange(id, state, mapped))
+            return;
+        if (this.handleArchiveStateChange(id, state))
+            return;
+        if (this.handleDirectCoStateChange(id, state))
+            return;
+    }
+    handleMappedStateChange(id, state, mapped) {
+        if (this.suppressStateChange.has(id)) {
+            this.log.debug(this.translate("Ignoring state change for %s because it was just updated from endpoint", id));
+            return true;
+        }
+        const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, mapped.bool, mapped.textEncoding);
+        this.logOutgoingCoValue({
+            source: "mapping",
+            stateId: id,
+            key: mapped.key,
+            method,
+            ackVal,
+            uidValue,
+            bool: mapped.bool,
+            textEncoding: mapped.textEncoding,
+        });
+        this.client.call(mapped.key, method, uidValue);
+        const baseId = this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
+        this.keyIdMap.set(mapped.key, baseId);
+        this.idKeyMap.set(baseId, mapped.key);
+        this.setState(`${baseId}.value`, { val: ackVal, ack: true });
+        if (!state.ack) {
+            this.suppressStateChange.add(id);
+            this.setForeignState(id, { val: state.val, ack: true });
+            const supTimer = this.setTimeout(() => {
+                this.suppressStateChange.delete(id);
+                this.clearTimeout(supTimer);
             }, 1000);
-            return;
         }
-        if (id.startsWith("DA@.")) {
-            if (state.ack)
-                return;
-            const parts = id.split(".");
-            const action = parts.pop();
-            const baseId = parts.join(".");
-            const key = this.archiveIdKeyMap.get(baseId);
-            if (!key || !action)
-                return;
-            if (action === "meta") {
-                const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
-                if (prom) {
-                    prom
-                        .then(async (resp) => {
-                        await this.applyMeta(key, baseId, resp.data, true);
-                        await this.setStateAsync(id, {
-                            val: JSON.stringify(resp.data),
-                            ack: true,
-                        });
-                    })
-                        .catch((err) => {
-                        this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
-                    });
-                }
-            }
-            else if (action === "query") {
-                let params;
-                try {
-                    params =
-                        typeof state.val === "string" ? JSON.parse(state.val) : state.val;
-                    if (!params || typeof params !== "object")
-                        throw new Error();
-                }
-                catch {
-                    this.log.warn(this.translate("Invalid query parameters for %s: %s", id, state.val));
-                    return;
-                }
-                const prom = this.client.call(key, "get", params, this.makeTag("get"));
-                if (prom) {
-                    prom
-                        .then((resp) => {
-                        this.setState(id, { val: state.val, ack: true });
-                        this.setState(`${baseId}.data`, {
-                            val: JSON.stringify(resp.data),
-                            ack: true,
-                        });
-                    })
-                        .catch((err) => {
-                        this.log.error(this.translate("Get call failed for %s: %s", key, err?.message || err));
-                    });
-                }
-            }
-            return;
-        }
-        if (id.startsWith("CO@.")) {
-            const parts = id.split(".");
-            const action = parts.pop();
-            if (action === "meta") {
-                if (state.ack)
-                    return;
-                const baseId = parts.join(".");
-                const key = this.idKeyMap.get(baseId) ??
-                    this.normalizeKey(parts.slice(1).join("."));
-                if (!key)
-                    return;
-                if (action === "meta") {
-                    const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
-                    if (prom) {
-                        prom
-                            .then(async (resp) => {
-                            await this.applyMeta(key, baseId, resp.data);
-                            await this.setStateAsync(id, {
-                                val: JSON.stringify(resp.data),
-                                ack: true,
-                            });
-                        })
-                            .catch((err) => {
-                            this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
-                        });
-                    }
-                    return;
-                }
-            }
-        }
+        this.pendingUpdates.set(mapped.key, ackVal);
+        const timer = this.setTimeout(() => {
+            this.pendingUpdates.delete(mapped.key);
+            this.clearTimeout(timer);
+        }, 1000);
+        return true;
+    }
+    handleArchiveStateChange(id, state) {
+        if (!id.startsWith("DA@."))
+            return false;
         if (state.ack)
-            return;
-        if (!id.startsWith("CO@."))
-            return;
+            return true;
         const parts = id.split(".");
+        const action = parts.pop();
+        const baseId = parts.join(".");
+        const key = this.archiveIdKeyMap.get(baseId);
+        if (!key || !action)
+            return true;
+        if (action === "meta") {
+            const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
+            if (prom) {
+                prom
+                    .then(async (resp) => {
+                    await this.applyMeta(key, baseId, resp.data, true);
+                    await this.setStateAsync(id, {
+                        val: JSON.stringify(resp.data),
+                        ack: true,
+                    });
+                })
+                    .catch((err) => {
+                    this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
+                });
+            }
+            return true;
+        }
+        if (action === "last") {
+            if (state.val !== true)
+                return true;
+            void this.handleLastArchiveQuery(key, baseId, id);
+            return true;
+        }
+        if (action === "query") {
+            let params;
+            try {
+                params = typeof state.val === "string" ? JSON.parse(state.val) : state.val;
+                if (!params || typeof params !== "object")
+                    throw new Error();
+            }
+            catch {
+                this.log.warn(this.translate("Invalid query parameters for %s: %s", id, state.val));
+                return true;
+            }
+            const queryParams = (0, archiveQuery_1.normalizeArchiveQuery)(params);
+            if (!(0, archiveQuery_1.isExecutableArchiveQuery)(queryParams)) {
+                this.log.warn(this.translate("Invalid archive query for %s: startat, cnt and size are required", id));
+                return true;
+            }
+            const prom = this.client.call(key, "get", queryParams, this.makeTag("get"));
+            if (prom) {
+                prom
+                    .then((resp) => {
+                    this.setState(id, { val: JSON.stringify(queryParams), ack: true });
+                    const data = JSON.stringify(resp.data);
+                    this.setState(`${baseId}.data`, { val: data, ack: true });
+                    this.setState(`${baseId}.lastResult`, { val: data, ack: true });
+                })
+                    .catch((err) => {
+                    this.log.error(this.translate("Get call failed for %s: %s", key, err?.message || err));
+                });
+            }
+            return true;
+        }
+        return true;
+    }
+    async readNumberState(id, fallback) {
+        const state = await this.getStateAsync(id);
+        const num = Number(state?.val);
+        return Number.isFinite(num) ? num : fallback;
+    }
+    async readColsState(id, fallback) {
+        const state = await this.getStateAsync(id);
+        if (typeof state?.val === "string") {
+            try {
+                const parsed = JSON.parse(state.val);
+                return (0, archiveQuery_1.normalizeArchiveCols)(parsed) ?? fallback;
+            }
+            catch {
+                return (0, archiveQuery_1.normalizeArchiveCols)(state.val) ?? fallback;
+            }
+        }
+        return (0, archiveQuery_1.normalizeArchiveCols)(state?.val) ?? fallback;
+    }
+    getMetaCols(metaResp) {
+        const cols = metaResp?.data?.cols;
+        if (!Array.isArray(cols))
+            return [];
+        return cols
+            .map((col) => String(col?.key ?? "").trim())
+            .filter(Boolean);
+    }
+    async handleLastArchiveQuery(key, baseId, id) {
+        try {
+            await this.setStateAsync(id, { val: false, ack: true });
+            const defaults = this.archiveQueryDefaults.get(key);
+            const metaResp = await this.client.call(key, "meta", undefined, this.makeTag("meta"));
+            if (metaResp?.data !== undefined) {
+                await this.applyMeta(key, baseId, metaResp.data, true);
+                await this.setStateAsync(`${baseId}.meta`, { val: JSON.stringify(metaResp.data), ack: true });
+            }
+            const lastCnt = await this.readNumberState(`${baseId}.lastCnt`, defaults?.lastCnt ?? 50);
+            const blockSize = await this.readNumberState(`${baseId}.blockSize`, defaults?.blockSize ?? defaults?.size ?? 1);
+            const cols = await this.readColsState(`${baseId}.cols`, defaults?.cols ?? []);
+            const queryCols = cols.length ? cols : this.getMetaCols(metaResp);
+            const queryParams = (0, archiveQuery_1.buildLastArchiveQuery)(metaResp, lastCnt, blockSize, queryCols);
+            if (!queryParams) {
+                this.log.warn(this.translate("Cannot build last archive query for %s because meta.stat.last is missing", key));
+                return;
+            }
+            await this.setStateAsync(`${baseId}.query`, { val: JSON.stringify(queryParams), ack: true });
+            this.log.debug(this.translate("Fetching archive data for %s with query %s", key, JSON.stringify(queryParams)));
+            const resp = await this.client.call(key, "get", queryParams, this.makeTag("get"));
+            const data = JSON.stringify(resp.data);
+            await this.setStateAsync(`${baseId}.data`, { val: data, ack: true });
+            await this.setStateAsync(`${baseId}.lastResult`, { val: data, ack: true });
+        }
+        catch (err) {
+            this.log.error(this.translate("Last archive query failed for %s: %s", key, err?.message || err));
+        }
+    }
+    handleDirectCoStateChange(id, state) {
+        if (state.ack)
+            return false;
+        if (!id.startsWith("CO@."))
+            return false;
+        const parts = id.split(".");
+        if (parts[parts.length - 1] === "meta") {
+            const baseId = parts.slice(0, parts.length - 1).join(".");
+            const key = this.idKeyMap.get(baseId) ??
+                this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
+            if (!key)
+                return true;
+            const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
+            if (prom) {
+                prom
+                    .then(async (resp) => {
+                    await this.applyMeta(key, baseId, resp.data);
+                    await this.setStateAsync(id, {
+                        val: JSON.stringify(resp.data),
+                        ack: true,
+                    });
+                })
+                    .catch((err) => {
+                    this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
+                });
+            }
+            return true;
+        }
         if (parts[parts.length - 1] !== "value")
-            return;
+            return false;
         const baseId = parts.slice(0, parts.length - 1).join(".");
         const key = this.idKeyMap.get(baseId) ??
             this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
         const boolKey = this.boolKeys.has(key);
-        const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey);
+        const textEncoding = this.keyTextEncodingMap.get(key) ?? "utf8";
+        const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, boolKey, textEncoding);
+        this.logOutgoingCoValue({
+            source: "direct",
+            stateId: id,
+            key,
+            method,
+            ackVal,
+            uidValue,
+            bool: boolKey,
+            textEncoding,
+        });
         this.client.call(key, method, uidValue);
         const mappedForeign = this.reverseMap.get(key);
         if (mappedForeign) {
-            let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
+            let mappedVal = (0, valueConversion_1.decodeAckValue)(ackVal, mappedForeign.bool).value;
             this.log.debug(`Updating mapped foreign state ${mappedForeign.stateId} -> ${JSON.stringify(mappedVal)}`);
             this.suppressStateChange.add(mappedForeign.stateId);
             this.setForeignState(mappedForeign.stateId, {
@@ -1321,6 +1272,7 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.clearTimeout(timer);
         }, 1000);
         this.setState(id, { val: ackVal, ack: true });
+        return true;
     }
     handleHsRestartTrigger(id, state) {
         this.log.debug(this.translate("HomeServer restart trigger received (val=%s, ack=%s)", state?.val, state?.ack));
@@ -1349,8 +1301,9 @@ class GiraEndpointAdapter extends utils.Adapter {
 }
 if (module.parent) {
     module.exports = (options) => new GiraEndpointAdapter(options);
-    module.exports.encodeUidValue = encodeUidValue;
-    module.exports.decodeAckValue = decodeAckValue;
+    module.exports.encodeUidValue = valueConversion_1.encodeUidValue;
+    module.exports.decodeAckValue = valueConversion_1.decodeAckValue;
+    module.exports.decodeCoValue = valueConversion_1.decodeCoValue;
 }
 else {
     (() => new GiraEndpointAdapter())();
