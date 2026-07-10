@@ -39,6 +39,7 @@ const crypto_1 = require("crypto");
 const util_1 = require("util");
 const valueConversion_1 = require("./lib/valueConversion");
 const configParser_1 = require("./lib/configParser");
+const archiveQuery_1 = require("./lib/archiveQuery");
 class GiraEndpointAdapter extends utils.Adapter {
     formatLogValue(value, maxLength = 200) {
         let text;
@@ -319,8 +320,73 @@ class GiraEndpointAdapter extends utils.Adapter {
                     },
                     native: {},
                 });
+                const defaults = this.archiveQueryDefaults.get(key);
+                await this.setObjectNotExistsAsync(`${baseId}.last`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("last"),
+                        type: "boolean",
+                        role: "button",
+                        read: true,
+                        write: true,
+                        def: false,
+                    },
+                    native: {},
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.lastCnt`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("lastCnt"),
+                        type: "number",
+                        role: "value",
+                        read: true,
+                        write: true,
+                        def: defaults?.lastCnt ?? 50,
+                    },
+                    native: {},
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.blockSize`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("blockSize"),
+                        type: "number",
+                        role: "value",
+                        read: true,
+                        write: true,
+                        def: defaults?.blockSize ?? defaults?.size ?? 1,
+                    },
+                    native: {},
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.cols`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("cols"),
+                        type: "string",
+                        role: "json",
+                        read: true,
+                        write: true,
+                        def: JSON.stringify(defaults?.cols ?? []),
+                    },
+                    native: {},
+                });
+                await this.setObjectNotExistsAsync(`${baseId}.lastResult`, {
+                    type: "state",
+                    common: {
+                        name: this.translate("lastResult"),
+                        type: "string",
+                        role: "json",
+                        read: true,
+                        write: false,
+                    },
+                    native: {},
+                });
+                await this.setStateAsync(`${baseId}.last`, { val: false, ack: true });
+                await this.setStateAsync(`${baseId}.lastCnt`, { val: defaults?.lastCnt ?? 50, ack: true });
+                await this.setStateAsync(`${baseId}.blockSize`, { val: defaults?.blockSize ?? defaults?.size ?? 1, ack: true });
+                await this.setStateAsync(`${baseId}.cols`, { val: JSON.stringify(defaults?.cols ?? []), ack: true });
                 this.subscribeStates(`${baseId}.meta`);
                 this.subscribeStates(`${baseId}.query`);
+                this.subscribeStates(`${baseId}.last`);
             }
             const validBaseIds = new Set(this.endpointKeys.map((k) => this.makeEndpointBaseId(k)));
             const validArchiveBases = new Set(this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`));
@@ -413,18 +479,20 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const baseId = this.archiveKeyIdMap.get(key);
                     if (!baseId)
                         continue;
-                    const queryParams = {};
-                    if (params.from)
-                        queryParams.from = params.from;
-                    if (params.to)
-                        queryParams.to = params.to;
-                    if (params.columns && params.columns.length)
-                        queryParams.columns = params.columns;
+                    if (params.mode === "last")
+                        continue;
+                    const queryParams = (0, archiveQuery_1.normalizeArchiveQuery)(params);
+                    if (!(0, archiveQuery_1.isExecutableArchiveQuery)(queryParams))
+                        continue;
                     const prom = this.client.call(key, "get", queryParams, this.makeTag("get"));
                     if (prom) {
                         prom
                             .then((resp) => {
                             this.setState(`${baseId}.data`, {
+                                val: JSON.stringify(resp.data),
+                                ack: true,
+                            });
+                            this.setState(`${baseId}.lastResult`, {
                                 val: JSON.stringify(resp.data),
                                 ack: true,
                             });
@@ -1006,91 +1074,116 @@ class GiraEndpointAdapter extends utils.Adapter {
         return true;
     }
     handleArchiveStateChange(id, state) {
-        if (id.startsWith("DA@.")) {
-            if (state.ack)
-                return true;
-            const parts = id.split(".");
-            const action = parts.pop();
-            const baseId = parts.join(".");
-            const key = this.archiveIdKeyMap.get(baseId);
-            if (!key || !action)
-                return true;
-            if (action === "meta") {
-                const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
-                if (prom) {
-                    prom
-                        .then(async (resp) => {
-                        await this.applyMeta(key, baseId, resp.data, true);
-                        await this.setStateAsync(id, {
-                            val: JSON.stringify(resp.data),
-                            ack: true,
-                        });
-                    })
-                        .catch((err) => {
-                        this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
+        if (!id.startsWith("DA@."))
+            return false;
+        if (state.ack)
+            return true;
+        const parts = id.split(".");
+        const action = parts.pop();
+        const baseId = parts.join(".");
+        const key = this.archiveIdKeyMap.get(baseId);
+        if (!key || !action)
+            return true;
+        if (action === "meta") {
+            const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
+            if (prom) {
+                prom
+                    .then(async (resp) => {
+                    await this.applyMeta(key, baseId, resp.data, true);
+                    await this.setStateAsync(id, {
+                        val: JSON.stringify(resp.data),
+                        ack: true,
                     });
-                }
-            }
-            else if (action === "query") {
-                let params;
-                try {
-                    params =
-                        typeof state.val === "string" ? JSON.parse(state.val) : state.val;
-                    if (!params || typeof params !== "object")
-                        throw new Error();
-                }
-                catch {
-                    this.log.warn(this.translate("Invalid query parameters for %s: %s", id, state.val));
-                    return true;
-                }
-                const prom = this.client.call(key, "get", params, this.makeTag("get"));
-                if (prom) {
-                    prom
-                        .then((resp) => {
-                        this.setState(id, { val: state.val, ack: true });
-                        this.setState(`${baseId}.data`, {
-                            val: JSON.stringify(resp.data),
-                            ack: true,
-                        });
-                    })
-                        .catch((err) => {
-                        this.log.error(this.translate("Get call failed for %s: %s", key, err?.message || err));
-                    });
-                }
+                })
+                    .catch((err) => {
+                    this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
+                });
             }
             return true;
         }
-        if (id.startsWith("CO@.")) {
-            const parts = id.split(".");
-            const action = parts.pop();
-            if (action === "meta") {
-                if (state.ack)
-                    return true;
-                const baseId = parts.join(".");
-                const key = this.idKeyMap.get(baseId) ??
-                    this.normalizeKey(parts.slice(1).join("."));
-                if (!key)
-                    return true;
-                if (action === "meta") {
-                    const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
-                    if (prom) {
-                        prom
-                            .then(async (resp) => {
-                            await this.applyMeta(key, baseId, resp.data);
-                            await this.setStateAsync(id, {
-                                val: JSON.stringify(resp.data),
-                                ack: true,
-                            });
-                        })
-                            .catch((err) => {
-                            this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
-                        });
-                    }
-                    return true;
-                }
+        if (action === "last") {
+            if (state.val !== true)
+                return true;
+            void this.handleLastArchiveQuery(key, baseId, id);
+            return true;
+        }
+        if (action === "query") {
+            let params;
+            try {
+                params = typeof state.val === "string" ? JSON.parse(state.val) : state.val;
+                if (!params || typeof params !== "object")
+                    throw new Error();
+            }
+            catch {
+                this.log.warn(this.translate("Invalid query parameters for %s: %s", id, state.val));
+                return true;
+            }
+            const queryParams = (0, archiveQuery_1.normalizeArchiveQuery)(params);
+            if (!(0, archiveQuery_1.isExecutableArchiveQuery)(queryParams)) {
+                this.log.warn(this.translate("Invalid archive query for %s: startat, cnt and size are required", id));
+                return true;
+            }
+            const prom = this.client.call(key, "get", queryParams, this.makeTag("get"));
+            if (prom) {
+                prom
+                    .then((resp) => {
+                    this.setState(id, { val: JSON.stringify(queryParams), ack: true });
+                    const data = JSON.stringify(resp.data);
+                    this.setState(`${baseId}.data`, { val: data, ack: true });
+                    this.setState(`${baseId}.lastResult`, { val: data, ack: true });
+                })
+                    .catch((err) => {
+                    this.log.error(this.translate("Get call failed for %s: %s", key, err?.message || err));
+                });
+            }
+            return true;
+        }
+        return true;
+    }
+    async readNumberState(id, fallback) {
+        const state = await this.getStateAsync(id);
+        const num = Number(state?.val);
+        return Number.isFinite(num) ? num : fallback;
+    }
+    async readColsState(id, fallback) {
+        const state = await this.getStateAsync(id);
+        if (typeof state?.val === "string") {
+            try {
+                const parsed = JSON.parse(state.val);
+                return (0, archiveQuery_1.normalizeArchiveCols)(parsed) ?? fallback;
+            }
+            catch {
+                return (0, archiveQuery_1.normalizeArchiveCols)(state.val) ?? fallback;
             }
         }
-        return false;
+        return (0, archiveQuery_1.normalizeArchiveCols)(state?.val) ?? fallback;
+    }
+    async handleLastArchiveQuery(key, baseId, id) {
+        try {
+            await this.setStateAsync(id, { val: false, ack: true });
+            const defaults = this.archiveQueryDefaults.get(key);
+            const metaResp = await this.client.call(key, "meta", undefined, this.makeTag("meta"));
+            if (metaResp?.data !== undefined) {
+                await this.applyMeta(key, baseId, metaResp.data, true);
+                await this.setStateAsync(`${baseId}.meta`, { val: JSON.stringify(metaResp.data), ack: true });
+            }
+            const lastCnt = await this.readNumberState(`${baseId}.lastCnt`, defaults?.lastCnt ?? 50);
+            const blockSize = await this.readNumberState(`${baseId}.blockSize`, defaults?.blockSize ?? defaults?.size ?? 1);
+            const cols = await this.readColsState(`${baseId}.cols`, defaults?.cols ?? []);
+            const queryParams = (0, archiveQuery_1.buildLastArchiveQuery)(metaResp, lastCnt, blockSize, cols);
+            if (!queryParams) {
+                this.log.warn(this.translate("Cannot build last archive query for %s because meta.stat.last is missing", key));
+                return;
+            }
+            const resp = await this.client.call(key, "get", queryParams, this.makeTag("get"));
+            const data = JSON.stringify(resp.data);
+            await this.setStateAsync(`${baseId}.data`, { val: data, ack: true });
+            await this.setStateAsync(`${baseId}.lastResult`, { val: data, ack: true });
+            await this.setStateAsync(`${baseId}.query`, { val: JSON.stringify(queryParams), ack: true });
+        }
+        catch (err) {
+            this.log.error(this.translate("Last archive query failed for %s: %s", key, err?.message || err));
+        }
     }
     handleDirectCoStateChange(id, state) {
         if (state.ack)
@@ -1098,6 +1191,28 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (!id.startsWith("CO@."))
             return false;
         const parts = id.split(".");
+        if (parts[parts.length - 1] === "meta") {
+            const baseId = parts.slice(0, parts.length - 1).join(".");
+            const key = this.idKeyMap.get(baseId) ??
+                this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
+            if (!key)
+                return true;
+            const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
+            if (prom) {
+                prom
+                    .then(async (resp) => {
+                    await this.applyMeta(key, baseId, resp.data);
+                    await this.setStateAsync(id, {
+                        val: JSON.stringify(resp.data),
+                        ack: true,
+                    });
+                })
+                    .catch((err) => {
+                    this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
+                });
+            }
+            return true;
+        }
         if (parts[parts.length - 1] !== "value")
             return false;
         const baseId = parts.slice(0, parts.length - 1).join(".");

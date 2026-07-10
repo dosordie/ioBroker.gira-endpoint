@@ -1,6 +1,7 @@
 const assert = require("assert").strict;
 const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion");
 const { parseAdapterConfig } = require("../build/lib/configParser");
+const { normalizeArchiveQuery, isExecutableArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
 
 const parserHelpers = {
   normalizeKey: (rawKey) => {
@@ -46,10 +47,61 @@ const parsedArchiveObject = parseAdapterConfig(
 );
 assert.equal(parsedArchiveObject.archiveDescMap.get("DA@ARCHIV1"), "Mein Archiv");
 assert.deepStrictEqual(parsedArchiveObject.archiveQueryDefaults.get("DA@ARCHIV1"), {
-  from: "2024-01-01",
-  to: "2024-01-31",
-  columns: ["a", "b", "c"],
+  cols: ["a", "b", "c"],
+  lastCnt: 50,
+  blockSize: 1,
+  mode: "manual",
 });
+
+const parsedArchiveNewDefaults = parseAdapterConfig(
+  {
+    dataArchives: [
+      {
+        key: "Archiv2",
+        start: "2607100800",
+        cnt: "50",
+        size: "1",
+        cols: "a b,c",
+        lastCnt: "25",
+        blockSize: "5",
+      },
+    ],
+  },
+  parserHelpers
+);
+assert.deepStrictEqual(parsedArchiveNewDefaults.archiveQueryDefaults.get("DA@ARCHIV2"), {
+  startat: "2607100800",
+  cnt: 50,
+  size: 1,
+  cols: ["a", "b", "c"],
+  lastCnt: 25,
+  blockSize: 5,
+  mode: "last",
+});
+
+assert.deepStrictEqual(normalizeArchiveQuery({}), {});
+assert.deepStrictEqual(normalizeArchiveQuery({ columns: "a b" }), { cols: ["a", "b"] });
+assert.equal(isExecutableArchiveQuery({ startat: "2607100800", cnt: 50, size: 1 }), true);
+assert.equal(isExecutableArchiveQuery({ cols: ["#1"] }), false);
+assert.equal(isExecutableArchiveQuery({}), false);
+assert.deepStrictEqual(
+  normalizeArchiveQuery({ start: "2607100800", cnt: "50", size: "1" }),
+  { startat: "2607100800", cnt: 50, size: 1 }
+);
+assert.deepStrictEqual(
+  normalizeArchiveQuery({ from: "x", to: "y", columns: "a b" }),
+  { cols: ["a", "b"] }
+);
+assert.equal(isExecutableArchiveQuery(normalizeArchiveQuery({ columns: "a b" })), false);
+assert.equal(formatArchiveStartAt(new Date(2026, 6, 10, 8, 0)), "2607100800");
+assert.deepStrictEqual(
+  buildLastArchiveQuery({ data: { stat: { last: new Date(2026, 6, 10, 8, 50) } } }, 50, 1, ["#1"]),
+  { startat: "2607100800", cnt: 50, size: 1, cols: ["#1"] }
+);
+assert.deepStrictEqual(
+  buildLastArchiveQuery({ data: { stat: { last: "1712345678,123" } } }, 1, 1),
+  { startat: "2404051933", cnt: 1, size: 1 }
+);
 
 const parsedEndpointMapping = parseAdapterConfig(
   {
@@ -124,10 +176,16 @@ assert.deepStrictEqual(decodeCoValue("123", false, "latin1"), {
   type: "number",
 });
 
-const path = require("path");
-const { tests } = require("@iobroker/testing");
+try {
+  const path = require("path");
+  const { tests } = require("@iobroker/testing");
 
-// Run basic integration tests for the adapter
-// This will use the default ioBroker testing harness
-// and ensure the adapter can be started and stopped.
-tests.integration(path.join(__dirname, ".."));
+  // Run basic integration tests for the adapter when the optional harness is installed.
+  tests.integration(path.join(__dirname, ".."));
+} catch (err) {
+  if (err && err.code === "MODULE_NOT_FOUND" && String(err.message).includes("@iobroker/testing")) {
+    console.warn("Skipping ioBroker integration tests because @iobroker/testing is not installed.");
+  } else {
+    throw err;
+  }
+}
