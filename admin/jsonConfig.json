@@ -451,19 +451,65 @@
               "default": true
             },
             {
-              "type": "text",
-              "attr": "start",
-              "label": "Startzeit"
+              "type": "select",
+              "attr": "mode",
+              "label": "Abfrage-Modus",
+              "default": "manual",
+              "options": [
+                {
+                  "label": "Manuell / feste Startzeit",
+                  "value": "manual"
+                },
+                {
+                  "label": "Letzte Blöcke per Button",
+                  "value": "last"
+                }
+              ],
+              "help": "manual: automatischer Abruf beim Start mit startat/cnt/size. last: Abruf über DA@.<Archiv>.last Button."
             },
             {
               "type": "text",
-              "attr": "end",
-              "label": "Endzeit"
+              "attr": "startat",
+              "label": "Startzeit (YYMMDDHHMM)",
+              "help": "Startzeit für manuelle get-Abfrage, z. B. 2607100800 = 10.07.2026 08:00"
+            },
+            {
+              "type": "number",
+              "attr": "cnt",
+              "label": "Anzahl Blöcke",
+              "min": 1,
+              "default": 50,
+              "help": "Anzahl der Datenblöcke für die manuelle Abfrage"
+            },
+            {
+              "type": "number",
+              "attr": "size",
+              "label": "Blockgröße (Minuten)",
+              "min": 1,
+              "default": 1,
+              "help": "Größe eines Datenblocks in Minuten"
             },
             {
               "type": "text",
-              "attr": "columns",
-              "label": "Spalten"
+              "attr": "cols",
+              "label": "Spalten",
+              "help": "Spalten als #Index oder Schlüssel, getrennt mit Leerzeichen/Komma/Semikolon, z. B. #1 #2 oder CREDIT DEBIT"
+            },
+            {
+              "type": "number",
+              "attr": "lastCnt",
+              "label": "Letzte Blöcke",
+              "min": 1,
+              "default": 50,
+              "help": "Anzahl der Blöcke für den Komfortabruf über DA@.<Archiv>.last"
+            },
+            {
+              "type": "number",
+              "attr": "blockSize",
+              "label": "Blockgröße letzte Abfrage (Minuten)",
+              "min": 1,
+              "default": 1,
+              "help": "Blockgröße in Minuten für den Komfortabruf über DA@.<Archiv>.last"
             }
           ]
         }
