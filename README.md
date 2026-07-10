@@ -63,6 +63,13 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 
 ## Changelog
 
+### 0.4.0
+* Add Latin1/UTF-8 text encoding for CO@ texts and decode incoming CO@ text values
+* Improve Gira call error diagnostics and debug logs
+* Centralize config parsing
+* Repair DA@ data archives for startat/cnt/size/cols and add "Daten holen" last-block queries
+* Update DA@ admin UI to an accordion and fix request matching for reduced HomeServer responses
+
 ### 0.3.1
 * Add `info.hsRestart` trigger to resend all \"update on start\" states after a HomeServer restart
 

@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.3.3",
+    "version": "0.4.0",
     "news": {
+      "0.4.0": {
+        "en": "Add and improve DA@ data archive support with Gira get parameters, last-block queries, admin UI updates, and robust request matching",
+        "de": "DA@ Datenarchive ergänzt und verbessert: korrekte Gira-get-Parameter, Letzte-Blöcke-Abfrage, aktualisierte Admin-UI und robustes Request-Matching"
+      },
       "0.3.3": {
         "en": "Improve admin config validation, value conversion structure, and Gira call diagnostics",
         "de": "Verbessert Admin-Konfig-Validierung, Werte-Konvertierung und Diagnose von Gira-Aufrufen"
