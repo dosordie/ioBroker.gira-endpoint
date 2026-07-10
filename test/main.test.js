@@ -2,6 +2,35 @@ const assert = require("assert").strict;
 const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion");
 const { parseAdapterConfig } = require("../build/lib/configParser");
 const { normalizeArchiveQuery, isExecutableArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
+const { makeMinimalRequest, makeRequestKey, makeRequestKeys } = require("../build/lib/requestMatching");
+
+
+const fullArchiveRequest = {
+  key: "DA@ENDPOINT",
+  method: "get",
+  startat: "2607080701",
+  cnt: 50,
+  size: 60,
+  cols: ["#1"],
+};
+const minimalArchiveRequest = { key: "DA@ENDPOINT", method: "get" };
+const fullArchiveRequestKey = makeRequestKey(fullArchiveRequest);
+const minimalArchiveRequestKey = makeRequestKey(minimalArchiveRequest);
+assert.deepStrictEqual(makeMinimalRequest(fullArchiveRequest), minimalArchiveRequest);
+assert.deepStrictEqual(makeRequestKeys(fullArchiveRequest), [
+  fullArchiveRequestKey,
+  minimalArchiveRequestKey,
+]);
+
+const requestTagMap = new Map();
+const tag = "archive-tag";
+for (const requestKey of makeRequestKeys(fullArchiveRequest)) requestTagMap.set(requestKey, tag);
+assert.equal(requestTagMap.get(fullArchiveRequestKey), tag);
+assert.equal(requestTagMap.get(minimalArchiveRequestKey), tag);
+assert.equal(requestTagMap.get(makeRequestKey(minimalArchiveRequest)), tag);
+for (const requestKey of makeRequestKeys(fullArchiveRequest)) requestTagMap.delete(requestKey);
+assert.equal(requestTagMap.has(fullArchiveRequestKey), false);
+assert.equal(requestTagMap.has(minimalArchiveRequestKey), false);
 
 const parserHelpers = {
   normalizeKey: (rawKey) => {

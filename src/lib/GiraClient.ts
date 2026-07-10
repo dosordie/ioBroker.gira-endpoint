@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import WebSocket from "ws";
+import { makeRequestKey, makeRequestKeys } from "./requestMatching";
 
 // Kein Listener-Limit (verhindert MaxListeners-Warnungen global hier)
 EventEmitter.defaultMaxListeners = 0;
@@ -114,6 +115,7 @@ export class GiraClient extends EventEmitter {
     }
   >();
   private requestTags = new Map<string, string>();
+  private tagRequestKeys = new Map<string, string[]>();
 
   constructor(opts: GiraClientOptions) {
     super();
@@ -206,19 +208,15 @@ export class GiraClient extends EventEmitter {
             if (resolver?.timer) clearTimeout(resolver.timer as any);
             resolver?.reject(err);
             this.tagResolvers.delete(tag);
-            if (payload?.request) {
-              const reqKey = this.makeRequestKey(payload.request);
-              this.requestTags.delete(reqKey);
-            }
+            this.clearRequestTag(tag, ...makeRequestKeys(payload?.request));
           } else if (payload?.request) {
-            const reqKey = this.makeRequestKey(payload.request);
-            const t = this.requestTags.get(reqKey);
+            const { tag: t, requestKeys } = this.findRequestTag(payload.request);
             if (t && this.tagResolvers.has(t)) {
               const resolver = this.tagResolvers.get(t);
               if (resolver?.timer) clearTimeout(resolver.timer as any);
               resolver?.reject(err);
               this.tagResolvers.delete(t);
-              this.requestTags.delete(reqKey);
+              this.clearRequestTag(t, ...requestKeys);
             }
           }
           this.emit("error", err);
@@ -232,19 +230,15 @@ export class GiraClient extends EventEmitter {
           if (resolver?.timer) clearTimeout(resolver.timer as any);
           resolver?.resolve(payload);
           this.tagResolvers.delete(tag);
-          if (payload?.request) {
-            const reqKey = this.makeRequestKey(payload.request);
-            this.requestTags.delete(reqKey);
-          }
+          this.clearRequestTag(tag, ...makeRequestKeys(payload?.request));
         } else if (payload?.request) {
-          const reqKey = this.makeRequestKey(payload.request);
-          const t = this.requestTags.get(reqKey);
+          const { tag: t, requestKeys } = this.findRequestTag(payload.request);
           if (t && this.tagResolvers.has(t)) {
             const resolver = this.tagResolvers.get(t);
             if (resolver?.timer) clearTimeout(resolver.timer as any);
             resolver?.resolve(payload);
             this.tagResolvers.delete(t);
-            this.requestTags.delete(reqKey);
+            this.clearRequestTag(t, ...requestKeys);
           }
         }
       } catch (err) {
@@ -272,11 +266,23 @@ export class GiraClient extends EventEmitter {
   }
 
   private makeRequestKey(obj: any): string {
-    if (!obj || typeof obj !== "object") return String(obj);
-    const keys = Object.keys(obj).sort();
-    const sorted: any = {};
-    for (const k of keys) sorted[k] = obj[k];
-    return JSON.stringify(sorted);
+    return makeRequestKey(obj);
+  }
+
+  private clearRequestTag(tag: string, ...requestKeys: string[]): void {
+    const knownRequestKeys = this.tagRequestKeys.get(tag) ?? [];
+    const keys = new Set([...knownRequestKeys, ...requestKeys]);
+    for (const requestKey of keys) this.requestTags.delete(requestKey);
+    this.tagRequestKeys.delete(tag);
+  }
+
+  private findRequestTag(request: any): { tag?: string; requestKeys: string[] } {
+    const requestKeys = makeRequestKeys(request);
+    for (const requestKey of requestKeys) {
+      const tag = this.requestTags.get(requestKey);
+      if (tag) return { tag, requestKeys };
+    }
+    return { requestKeys };
   }
 
   public call(
@@ -297,15 +303,16 @@ export class GiraClient extends EventEmitter {
     const msg: any = { type: "call", param };
     if (tag) {
       msg.tag = tag;
-      const reqKey = this.makeRequestKey(param);
+      const requestKeys = makeRequestKeys(param);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           reject(new Error(`Gira call failed: Timeout, key=${key}, method=${method}, tag=${tag}, params=${shorten(safeStringify(param) ?? String(param))}`));
           this.tagResolvers.delete(tag);
-          this.requestTags.delete(reqKey);
+          this.clearRequestTag(tag, ...requestKeys);
         }, timeoutMs);
         this.tagResolvers.set(tag, { resolve, reject, timer });
-        this.requestTags.set(reqKey, tag);
+        this.tagRequestKeys.set(tag, requestKeys);
+        for (const requestKey of requestKeys) this.requestTags.set(requestKey, tag);
         this.send(msg);
       });
     }
