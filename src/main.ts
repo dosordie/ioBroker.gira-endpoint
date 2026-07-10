@@ -2,7 +2,8 @@ import * as utils from "@iobroker/adapter-core";
 import { GiraClient, codeToMessage } from "./lib/GiraClient";
 import { randomUUID } from "crypto";
 import { format } from "util";
-import { decodeAckValue, decodeCoValue, encodeUidValue, normalizeTextEncoding, TextEncoding } from "./lib/valueConversion";
+import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
+import { parseEndpointAndMappingConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource } from "./lib/configParser";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
@@ -82,11 +83,6 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
     | string;
 }
 
-type ForwardMapping = {
-  key: string;
-  bool: boolean;
-  textEncoding: TextEncoding;
-};
 
 class GiraEndpointAdapter extends utils.Adapter {
   private client?: GiraClient;
@@ -97,19 +93,13 @@ class GiraEndpointAdapter extends utils.Adapter {
   private keyCaseMap = new Map<string, string>();
   private forwardMap = new Map<string, ForwardMapping>();
   private keyTextEncodingMap = new Map<string, TextEncoding>();
-  private reverseMap = new Map<string, { stateId: string; bool: boolean; ack: boolean }>();
+  private reverseMap = new Map<string, ReverseMapping>();
   private boolKeys = new Set<string>();
   private suppressStateChange = new Set<string>();
   private pendingUpdates = new Map<string, any>();
   private skipInitialUpdate = new Set<string>();
   private initialSkipUpdate = new Set<string>();
-  private updateOnStartSources: Array<{
-    key: string;
-    stateId: string;
-    bool: boolean;
-    foreign: boolean;
-    textEncoding: TextEncoding;
-  }> = [];
+  private updateOnStartSources: UpdateOnStartSource[] = [];
   private pendingSubscriptions = new Set<string>();
   private isConnected = false;
   private pendingHsRestart = false;
@@ -251,7 +241,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         native: {},
       });
 
-        const cfg = this.config as unknown as AdapterConfig;
+      const cfg = this.config as unknown as AdapterConfig;
       const host = String(cfg.host ?? "").trim();
       const port = Number(cfg.port ?? 80);
       const ssl = Boolean(cfg.ssl ?? false);
@@ -261,144 +251,21 @@ class GiraEndpointAdapter extends utils.Adapter {
       const authHeader = Boolean(cfg.authHeader);
       const pingIntervalMs = Number(cfg.pingIntervalMs ?? 30000);
 
-      const boolKeys = new Set<string>();
-      const skipInitial = new Set<string>();
-      const updateOnStartSources: Array<{
-        key: string;
-        stateId: string;
-        bool: boolean;
-        foreign: boolean;
-        textEncoding: TextEncoding;
-      }> = [];
-      const keyTextEncodingMap = new Map<string, TextEncoding>();
+      const parsed = parseEndpointAndMappingConfig(cfg, {
+        normalizeKey: this.normalizeKey.bind(this),
+        makeEndpointBaseId: this.makeEndpointBaseId.bind(this),
+      });
+      this.forwardMap = parsed.forwardMap;
+      this.reverseMap = parsed.reverseMap;
+      this.boolKeys = parsed.boolKeys;
+      this.keyDescMap = parsed.keyDescMap;
+      this.keyCaseMap = parsed.keyCaseMap;
+      this.skipInitialUpdate = parsed.skipInitialUpdate;
+      this.initialSkipUpdate = new Set(parsed.skipInitialUpdate);
+      this.updateOnStartSources = parsed.updateOnStartSources;
+      this.endpointKeys = parsed.endpointKeys;
+      this.keyTextEncodingMap = parsed.keyTextEncodingMap;
 
-      this.keyCaseMap.clear();
-
-      const rawKeys = Array.isArray(cfg.endpointGroups)
-        ? cfg.endpointGroups.flatMap((g: any) =>
-            Array.isArray(g?.keys) ? g.keys : []
-          )
-        : cfg.endpointKeys;
-      const endpointKeys: string[] = [];
-      if (Array.isArray(rawKeys)) {
-        for (const k of rawKeys) {
-          if (typeof k === "object" && k) {
-            if ((k as any).enabled === false) continue;
-            const rawKey = String((k as any).key ?? "").trim();
-            const key = this.normalizeKey(rawKey);
-            if (!key) continue;
-            this.rememberKeyCase(key, rawKey || key);
-            const name = String((k as any).name ?? "").trim();
-            if (name) this.keyDescMap.set(key, name);
-            const bool = Boolean((k as any).bool);
-            if (bool) boolKeys.add(key);
-            const textEncoding = normalizeTextEncoding((k as any).textEncoding);
-            keyTextEncodingMap.set(key, textEncoding);
-            const updateOnStart = (k as any).updateOnStart !== false;
-            if (!updateOnStart) skipInitial.add(key);
-            if (updateOnStart) {
-              const baseId = this.makeEndpointBaseId(key);
-              updateOnStartSources.push({
-                key,
-                stateId: `${baseId}.value`,
-                bool,
-                foreign: false,
-                textEncoding,
-              });
-            }
-            endpointKeys.push(key);
-          } else {
-            const rawKey = String(k).trim();
-            const key = this.normalizeKey(rawKey);
-            if (!key) continue;
-            this.rememberKeyCase(key, rawKey || key);
-            endpointKeys.push(key);
-          }
-        }
-      } else {
-        const arr = String(rawKeys ?? "")
-          .split(/[,;\s]+/)
-          .map((k) => k.trim())
-          .filter((k) => k);
-        for (const rawKey of arr) {
-          const key = this.normalizeKey(rawKey);
-          if (!key) continue;
-          this.rememberKeyCase(key, rawKey);
-          endpointKeys.push(key);
-        }
-      }
-
-      const forwardMap = new Map<string, { key: string; bool: boolean; textEncoding: TextEncoding }>();
-      const reverseMap = new Map<string, { stateId: string; bool: boolean; ack: boolean }>();
-      const mappingGroups = Array.isArray(cfg.mappingGroups)
-        ? cfg.mappingGroups
-        : Array.isArray(cfg.mappings)
-        ? [{ mappings: cfg.mappings }]
-        : [];
-      for (const g of mappingGroups) {
-        if (!g || typeof g !== "object") continue;
-        const list = (g as any).mappings;
-        if (!Array.isArray(list)) continue;
-        for (const m of list) {
-          if (typeof m !== "object" || !m) continue;
-          if ((m as any).enabled === false) continue;
-          const stateId = String((m as any).stateId ?? "").trim();
-          const rawKey = String((m as any).key ?? "").trim();
-          const key = this.normalizeKey(rawKey);
-          if (!stateId || !key) continue;
-          this.rememberKeyCase(key, rawKey || key);
-          const name = String((m as any).name ?? "").trim();
-          if (name) this.keyDescMap.set(key, name);
-          const toEndpoint = (m as any).toEndpoint !== false;
-          const toState = Boolean((m as any).toState);
-          const bool = Boolean((m as any).bool);
-          const ack = (m as any).ack !== false;
-          const textEncoding = normalizeTextEncoding((m as any).textEncoding);
-          if (!keyTextEncodingMap.has(key)) {
-            keyTextEncodingMap.set(key, textEncoding);
-          }
-          const updateOnStart = (m as any).updateOnStart !== false;
-          if (!updateOnStart) skipInitial.add(key);
-          if (toEndpoint) {
-            forwardMap.set(stateId, { key, bool, textEncoding });
-            if (bool) boolKeys.add(key);
-            if (updateOnStart) {
-              updateOnStartSources.push({
-                key,
-                stateId,
-                bool,
-                foreign: true,
-                textEncoding,
-              });
-            }
-          }
-          if (toState) {
-            reverseMap.set(key, { stateId, bool, ack });
-            if (bool) boolKeys.add(key);
-          }
-          if (!endpointKeys.includes(key)) endpointKeys.push(key);
-        }
-      }
-      this.forwardMap = forwardMap;
-      this.reverseMap = reverseMap;
-      this.boolKeys = boolKeys;
-      this.skipInitialUpdate = skipInitial;
-      this.initialSkipUpdate = new Set(skipInitial);
-      const uniqueSources = new Map<
-        string,
-        {
-          key: string;
-          stateId: string;
-          bool: boolean;
-          foreign: boolean;
-          textEncoding: TextEncoding;
-        }
-      >();
-      for (const src of updateOnStartSources) {
-        const key = `${src.key}|${src.stateId}|${src.foreign ? "1" : "0"}`;
-        if (!uniqueSources.has(key)) uniqueSources.set(key, src);
-      }
-      this.updateOnStartSources = Array.from(uniqueSources.values());
       this.archiveQueryDefaults.clear();
       const rawArchives = cfg.dataArchives;
       const archiveKeys: string[] = [];
@@ -446,11 +313,9 @@ class GiraEndpointAdapter extends utils.Adapter {
       }
       this.archiveKeys = archiveKeys;
 
-      for (const key of endpointKeys) {
+      for (const key of this.endpointKeys) {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
       }
-      this.endpointKeys = endpointKeys;
-      this.keyTextEncodingMap = keyTextEncodingMap;
 
       const endpointKeysText = this.endpointKeys.length
         ? this.endpointKeys.join(", ")
