@@ -56,6 +56,12 @@ export function normalizeArchiveQuery(raw: any): NormalizedArchiveQuery {
   return query;
 }
 
+export function isExecutableArchiveQuery(query: NormalizedArchiveQuery): boolean {
+  return Boolean(
+    query.startat && query.cnt !== undefined && query.size !== undefined
+  );
+}
+
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
@@ -74,7 +80,9 @@ function parseMetaLast(value: unknown): Date | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return undefined;
-    if (/^\d+$/.test(trimmed)) return parseMetaLast(Number(trimmed));
+    const normalized = trimmed.replace(",", ".");
+    const num = Number(normalized);
+    if (Number.isFinite(num)) return parseMetaLast(num);
     const date = new Date(trimmed);
     return Number.isNaN(date.getTime()) ? undefined : date;
   }

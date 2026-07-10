@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
 import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults } from "./lib/configParser";
-import { buildLastArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
+import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
@@ -601,8 +601,9 @@ class GiraEndpointAdapter extends utils.Adapter {
         for (const [key, params] of this.archiveQueryDefaults.entries()) {
           const baseId = this.archiveKeyIdMap.get(key);
           if (!baseId) continue;
-          if (params.mode === "last" && !params.startat) continue;
+          if (params.mode === "last") continue;
           const queryParams = normalizeArchiveQuery(params);
+          if (!isExecutableArchiveQuery(queryParams)) continue;
           const prom = this.client!.call(key, "get", queryParams, this.makeTag("get"));
           if (prom) {
             prom
@@ -1349,6 +1350,12 @@ class GiraEndpointAdapter extends utils.Adapter {
         return true;
       }
       const queryParams = normalizeArchiveQuery(params);
+      if (!isExecutableArchiveQuery(queryParams)) {
+        this.log.warn(
+          this.translate("Invalid archive query for %s: startat, cnt and size are required", id)
+        );
+        return true;
+      }
       const prom = this.client!.call(key, "get", queryParams, this.makeTag("get"));
       if (prom) {
         prom

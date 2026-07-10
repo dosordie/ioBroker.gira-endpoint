@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.isArchiveStartAt = isArchiveStartAt;
 exports.normalizeArchiveCols = normalizeArchiveCols;
 exports.normalizeArchiveQuery = normalizeArchiveQuery;
+exports.isExecutableArchiveQuery = isExecutableArchiveQuery;
 exports.formatArchiveStartAt = formatArchiveStartAt;
 exports.buildLastArchiveQuery = buildLastArchiveQuery;
 const STARTAT_RE = /^\d{10}$/;
@@ -51,6 +52,9 @@ function normalizeArchiveQuery(raw) {
         query.cols = cols;
     return query;
 }
+function isExecutableArchiveQuery(query) {
+    return Boolean(query.startat && query.cnt !== undefined && query.size !== undefined);
+}
 function pad2(value) {
     return String(value).padStart(2, "0");
 }
@@ -69,8 +73,10 @@ function parseMetaLast(value) {
         const trimmed = value.trim();
         if (!trimmed)
             return undefined;
-        if (/^\d+$/.test(trimmed))
-            return parseMetaLast(Number(trimmed));
+        const normalized = trimmed.replace(",", ".");
+        const num = Number(normalized);
+        if (Number.isFinite(num))
+            return parseMetaLast(num);
         const date = new Date(trimmed);
         return Number.isNaN(date.getTime()) ? undefined : date;
     }

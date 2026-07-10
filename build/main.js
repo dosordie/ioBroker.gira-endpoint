@@ -479,9 +479,11 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const baseId = this.archiveKeyIdMap.get(key);
                     if (!baseId)
                         continue;
-                    if (params.mode === "last" && !params.startat)
+                    if (params.mode === "last")
                         continue;
                     const queryParams = (0, archiveQuery_1.normalizeArchiveQuery)(params);
+                    if (!(0, archiveQuery_1.isExecutableArchiveQuery)(queryParams))
+                        continue;
                     const prom = this.client.call(key, "get", queryParams, this.makeTag("get"));
                     if (prom) {
                         prom
@@ -1117,6 +1119,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                 return true;
             }
             const queryParams = (0, archiveQuery_1.normalizeArchiveQuery)(params);
+            if (!(0, archiveQuery_1.isExecutableArchiveQuery)(queryParams)) {
+                this.log.warn(this.translate("Invalid archive query for %s: startat, cnt and size are required", id));
+                return true;
+            }
             const prom = this.client.call(key, "get", queryParams, this.makeTag("get"));
             if (prom) {
                 prom

@@ -1,7 +1,7 @@
 const assert = require("assert").strict;
 const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion");
 const { parseAdapterConfig } = require("../build/lib/configParser");
-const { normalizeArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
+const { normalizeArchiveQuery, isExecutableArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
 
 const parserHelpers = {
   normalizeKey: (rawKey) => {
@@ -79,7 +79,11 @@ assert.deepStrictEqual(parsedArchiveNewDefaults.archiveQueryDefaults.get("DA@ARC
   mode: "last",
 });
 
+assert.deepStrictEqual(normalizeArchiveQuery({}), {});
 assert.deepStrictEqual(normalizeArchiveQuery({ columns: "a b" }), { cols: ["a", "b"] });
+assert.equal(isExecutableArchiveQuery({ startat: "2607100800", cnt: 50, size: 1 }), true);
+assert.equal(isExecutableArchiveQuery({ cols: ["#1"] }), false);
+assert.equal(isExecutableArchiveQuery({}), false);
 assert.deepStrictEqual(
   normalizeArchiveQuery({ start: "2607100800", cnt: "50", size: "1" }),
   { startat: "2607100800", cnt: 50, size: 1 }
@@ -88,10 +92,15 @@ assert.deepStrictEqual(
   normalizeArchiveQuery({ from: "x", to: "y", columns: "a b" }),
   { cols: ["a", "b"] }
 );
+assert.equal(isExecutableArchiveQuery(normalizeArchiveQuery({ columns: "a b" })), false);
 assert.equal(formatArchiveStartAt(new Date(2026, 6, 10, 8, 0)), "2607100800");
 assert.deepStrictEqual(
   buildLastArchiveQuery({ data: { stat: { last: new Date(2026, 6, 10, 8, 50) } } }, 50, 1, ["#1"]),
   { startat: "2607100800", cnt: 50, size: 1, cols: ["#1"] }
+);
+assert.deepStrictEqual(
+  buildLastArchiveQuery({ data: { stat: { last: "1712345678,123" } } }, 1, 1),
+  { startat: "2404051933", cnt: 1, size: 1 }
 );
 
 const parsedEndpointMapping = parseAdapterConfig(
