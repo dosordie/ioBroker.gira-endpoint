@@ -138,6 +138,3 @@ iobroker upload gira-endpoint
 
 ```
 ---
-
-<!-- TEMPORARY ANALYSIS LINK: remove after inventory -->
-[Official Ubiquiti AI-Key OrinNX256 firmware API](https://fw-update.ubnt.com/api/firmware?filter=eq~~product~~AI-Key&filter=eq~~channel~~release&filter=eq~~platform~~OrinNX256&sort=-version&limit=999)
