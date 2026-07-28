@@ -71,14 +71,14 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 * Update DA@ admin UI to an accordion and fix request matching for reduced HomeServer responses
 
 ### 0.3.1
-* Add `info.hsRestart` trigger to resend all \"update on start\" states after a HomeServer restart
+* Add `info.hsRestart` trigger to resend all "update on start" states after a HomeServer restart
 
 ### 0.2.9
 * Preserve case for CO@ endpoint object IDs
 * Validate CO@/DA@ fields without prefixes in the admin UI
 
 ### 0.2.8
-* Validate group names and show validation hints for endpoint fields in admin UI
+* Validate group names and show validation hints for endpoint fields in the admin UI
 * Add three-dot menu for objects
 
 ### 0.2.7
@@ -138,3 +138,6 @@ iobroker upload gira-endpoint
 
 ```
 ---
+
+<!-- TEMPORARY ANALYSIS LINK: remove after inventory -->
+[Official Ubiquiti AI-Key OrinNX256 firmware API](https://fw-update.ubnt.com/api/firmware?filter=eq~~product~~AI-Key&filter=eq~~channel~~release&filter=eq~~platform~~OrinNX256&sort=-version&limit=999)
