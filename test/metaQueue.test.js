@@ -8,6 +8,7 @@ const {
   getCoMetaFormatText,
   getCoMetaValueType,
 } = require("../build/lib/coMeta");
+const { MetaWarningDeduplicator } = require("../build/lib/metaWarningDeduplicator");
 
 async function main() {
   let active = 0;
@@ -53,6 +54,14 @@ async function main() {
   ]);
   assert.equal(getCoMetaFormatText({ format: 4 }), "16 Bit Gleitkomma");
   assert.equal(getCoMetaValueType({ format: 4 }), "number");
+
+  const warnings = new MetaWarningDeduplicator();
+  assert.equal(warnings.shouldWarn("CO@MISSING", "code=404"), true);
+  assert.equal(warnings.shouldWarn("CO@MISSING", "code=404"), false);
+  assert.equal(warnings.shouldWarn("CO@MISSING", "timeout"), true);
+  assert.equal(warnings.shouldWarn("CO@OTHER", "timeout"), true);
+  warnings.reset("CO@MISSING");
+  assert.equal(warnings.shouldWarn("CO@MISSING", "timeout"), true);
 }
 
 main().catch((error) => {

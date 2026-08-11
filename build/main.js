@@ -40,6 +40,7 @@ const util_1 = require("util");
 const valueConversion_1 = require("./lib/valueConversion");
 const coMeta_1 = require("./lib/coMeta");
 const coMetaQueue_1 = require("./lib/coMetaQueue");
+const metaWarningDeduplicator_1 = require("./lib/metaWarningDeduplicator");
 const configParser_1 = require("./lib/configParser");
 const messageArchive_1 = require("./lib/messageArchive");
 const archiveQuery_1 = require("./lib/archiveQuery");
@@ -98,6 +99,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.archiveDescMap = new Map();
         this.archiveQueryDefaults = new Map();
         this.fetchedMeta = new Set();
+        this.metaWarnings = new metaWarningDeduplicator_1.MetaWarningDeduplicator();
         this.coMetaFormats = new Map();
         this.coMetaValueTypes = new Map();
         this.messageArchives = [];
@@ -1080,21 +1082,35 @@ class GiraEndpointAdapter extends utils.Adapter {
     async fetchMeta(key, baseId) {
         if (!this.client)
             return false;
+        let metaResp;
         try {
-            const metaResp = await this.client.call(key, "meta", undefined, this.makeTag("meta"));
+            metaResp = await this.client.call(key, "meta", undefined, this.makeTag("meta"));
+        }
+        catch (err) {
+            this.warnCoMetaFetchFailed(key, err);
+            return false;
+        }
+        try {
             if (metaResp?.data !== undefined) {
                 await this.applyMeta(key, baseId, metaResp.data);
                 await this.setStateAsync(`${baseId}.meta`, {
                     val: JSON.stringify(metaResp.data),
                     ack: true,
                 });
+                this.metaWarnings.reset(key);
                 return true;
             }
         }
         catch (err) {
-            this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
+            this.log.error(`Failed to process metadata for ${key}: ${err?.message || err}`);
         }
         return false;
+    }
+    warnCoMetaFetchFailed(key, err) {
+        const detail = String(err?.message || err);
+        if (!this.metaWarnings.shouldWarn(key, detail))
+            return;
+        this.log.warn(this.translate("Meta call failed for %s: %s", key, detail));
     }
     async triggerUpdateOnStart() {
         if (!this.client || !this.isConnected) {
@@ -1532,17 +1548,27 @@ class GiraEndpointAdapter extends utils.Adapter {
                 return true;
             const prom = this.client.call(key, "meta", undefined, this.makeTag("meta"));
             if (prom) {
-                prom
-                    .then(async (resp) => {
-                    await this.applyMeta(key, baseId, resp.data);
-                    await this.setStateAsync(id, {
-                        val: JSON.stringify(resp.data),
-                        ack: true,
-                    });
-                })
-                    .catch((err) => {
-                    this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
-                });
+                void (async () => {
+                    let resp;
+                    try {
+                        resp = await prom;
+                    }
+                    catch (err) {
+                        this.warnCoMetaFetchFailed(key, err);
+                        return;
+                    }
+                    try {
+                        await this.applyMeta(key, baseId, resp.data);
+                        await this.setStateAsync(id, {
+                            val: JSON.stringify(resp.data),
+                            ack: true,
+                        });
+                        this.metaWarnings.reset(key);
+                    }
+                    catch (err) {
+                        this.log.error(`Failed to process metadata for ${key}: ${err?.message || err}`);
+                    }
+                })();
             }
             return true;
         }
