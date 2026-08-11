@@ -1330,7 +1330,10 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.log.warn(`${src.key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
         }
         const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool, src.textEncoding, metaValueType);
-        if (uidValue === undefined) continue;
+        if (uidValue === undefined) {
+          this.log.warn(`Skipping CO write source=updateOnStart stateId=${src.stateId} key=${src.key} because value ${this.formatLogValue(state.val)} is not a finite number`);
+          continue;
+        }
         this.logOutgoingCoValue({
           source: "updateOnStart",
           stateId: src.stateId,
@@ -1451,7 +1454,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.log.warn(`${mapped.key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
     }
     const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool, mapped.textEncoding, metaValueType);
-    if (uidValue === undefined) return true;
+    if (uidValue === undefined) {
+      this.log.warn(`Skipping CO write source=mapping stateId=${id} key=${mapped.key} because value ${this.formatLogValue(state.val)} is not a finite number`);
+      return true;
+    }
     this.logOutgoingCoValue({
       source: "mapping",
       stateId: id,
@@ -1795,7 +1801,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.log.warn(`${key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
     }
     const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey, textEncoding, metaValueType);
-    if (uidValue === undefined) return true;
+    if (uidValue === undefined) {
+      this.log.warn(`Skipping CO write source=direct stateId=${id} key=${key} because value ${this.formatLogValue(state.val)} is not a finite number`);
+      return true;
+    }
     this.logOutgoingCoValue({
       source: "direct",
       stateId: id,

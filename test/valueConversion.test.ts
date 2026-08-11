@@ -66,6 +66,14 @@ describe("value conversion helpers", () => {
       });
       assert.strictEqual(encodeUidValue(true, false, "utf8", "boolean").uidValue, "1");
       assert.strictEqual(encodeUidValue(123, false, "utf8", "number").uidValue, "123");
+      assert.strictEqual(encodeUidValue("12.5", false, "utf8", "number").uidValue, "12.5");
+    });
+
+    it("rejects non-finite values for numeric metadata", () => {
+      assert.strictEqual(encodeUidValue("abc", false, "utf8", "number").uidValue, undefined);
+      assert.strictEqual(encodeUidValue(NaN, false, "utf8", "number").uidValue, undefined);
+      assert.strictEqual(encodeUidValue(Infinity, false, "utf8", "number").uidValue, undefined);
+      assert.strictEqual(encodeUidValue(-Infinity, false, "utf8", "number").uidValue, undefined);
     });
   });
 

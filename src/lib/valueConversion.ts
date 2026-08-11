@@ -41,6 +41,9 @@ export function encodeUidValue(
 
   if (metaValueType === "number") {
     const ackVal = typeof val === "number" ? val : Number(val);
+    if (!Number.isFinite(ackVal)) {
+      return { uidValue: undefined, ackVal: val, method };
+    }
     return { uidValue: String(ackVal), ackVal, method };
   }
   let uidValue: any = val;

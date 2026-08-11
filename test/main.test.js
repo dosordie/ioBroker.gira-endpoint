@@ -322,6 +322,11 @@ assert.equal(encodeUidValue(false, false, "utf8", "boolean").uidValue, "0");
 assert.equal(encodeUidValue(true, false, "utf8", "boolean").uidValue, "1");
 assert.equal(encodeUidValue("Drying", true, "utf8", "string").uidValue, "RHJ5aW5n");
 assert.equal(encodeUidValue(123, false, "utf8", "number").uidValue, "123");
+assert.equal(encodeUidValue("12.5", false, "utf8", "number").uidValue, "12.5");
+assert.equal(encodeUidValue("abc", false, "utf8", "number").uidValue, undefined);
+assert.equal(encodeUidValue(NaN, false, "utf8", "number").uidValue, undefined);
+assert.equal(encodeUidValue(Infinity, false, "utf8", "number").uidValue, undefined);
+assert.equal(encodeUidValue(-Infinity, false, "utf8", "number").uidValue, undefined);
 
 try {
   const path = require("path");
