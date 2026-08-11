@@ -171,6 +171,17 @@ export type ParsedEndpointMappingConfig = {
   updateOnStartSources: UpdateOnStartSource[];
 };
 
+const NON_CO_GIRA_PREFIX = /^(?:MA|DA|CA|SC|SQ|TI|VC|CP)@/i;
+
+/**
+ * A prefixed Gira object cannot be configured as a communication object. Bare
+ * names remain valid because they may intentionally refer to real COs.
+ */
+export function isCommunicationObjectKey(rawKey: string): boolean {
+  const key = String(rawKey ?? "").trim();
+  return Boolean(key) && !NON_CO_GIRA_PREFIX.test(key);
+}
+
 function rememberKeyCase(
   keyCaseMap: Map<string, string>,
   normalized: string,
@@ -222,6 +233,7 @@ export function parseEndpointAndMappingConfig(
       if (typeof k === "object" && k) {
         if ((k as any).enabled === false) continue;
         const rawKey = String((k as any).key ?? "").trim();
+        if (!isCommunicationObjectKey(rawKey)) continue;
         const key = helpers.normalizeKey(rawKey);
         if (!key) continue;
         rememberKeyCase(keyCaseMap, key, rawKey || key);
@@ -250,6 +262,7 @@ export function parseEndpointAndMappingConfig(
         endpointKeys.push(key);
       } else {
         const rawKey = String(k).trim();
+        if (!isCommunicationObjectKey(rawKey)) continue;
         const key = helpers.normalizeKey(rawKey);
         if (!key) continue;
         rememberKeyCase(keyCaseMap, key, rawKey || key);
@@ -262,6 +275,7 @@ export function parseEndpointAndMappingConfig(
       .map((k) => k.trim())
       .filter((k) => k);
     for (const rawKey of arr) {
+      if (!isCommunicationObjectKey(rawKey)) continue;
       const key = helpers.normalizeKey(rawKey);
       if (!key) continue;
       rememberKeyCase(keyCaseMap, key, rawKey);
@@ -285,6 +299,7 @@ export function parseEndpointAndMappingConfig(
       if ((m as any).enabled === false) continue;
       const stateId = String((m as any).stateId ?? "").trim();
       const rawKey = String((m as any).key ?? "").trim();
+      if (!isCommunicationObjectKey(rawKey)) continue;
       const key = helpers.normalizeKey(rawKey);
       if (!stateId || !key) continue;
       rememberKeyCase(keyCaseMap, key, rawKey || key);

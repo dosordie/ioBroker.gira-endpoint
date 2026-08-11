@@ -1,9 +1,9 @@
 const assert = require("assert").strict;
 const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion");
-const { parseAdapterConfig } = require("../build/lib/configParser");
+const { parseAdapterConfig, isCommunicationObjectKey } = require("../build/lib/configParser");
 const { normalizeArchiveQuery, isExecutableArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
 const { makeMinimalRequest, makeRequestKey, makeRequestKeys } = require("../build/lib/requestMatching");
-const { buildMessageArchiveWriteRequest, extractMessageArchiveTokens, getMessageArchiveItems, findNewMessageArchiveItems, getMessageArchiveEntryKey, getLatestMessageArchiveItem, getMessageArchiveSubscriptionKey, messageArchiveEntryFingerprint, messageArchiveWriteCreated, sanitizeArchiveId, EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS } = require("../build/lib/messageArchive");
+const { buildMessageArchiveWriteRequest, buildSubscriptionKeys, extractMessageArchiveTokens, getLastMessageArchiveState, getMessageArchiveItems, findNewMessageArchiveItems, getMessageArchiveEntryKey, getLatestMessageArchiveItem, getMessageArchiveSubscriptionKey, isMessageArchiveKey, messageArchiveEntryFingerprint, messageArchiveWriteCreated, sanitizeArchiveId, EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS } = require("../build/lib/messageArchive");
 
 
 const fullArchiveRequest = {
@@ -68,6 +68,12 @@ assert.equal(messageArchiveEntryFingerprint(realMaItem), messageArchiveEntryFing
 assert.deepStrictEqual(findNewMessageArchiveItems({ data: [documentedMaItem] }, { data: [documentedMaItem, { ...realMaItem, ts: realMaItem.ts + 1 }] }), [{ ...realMaItem, ts: realMaItem.ts + 1 }]);
 assert.equal(getMessageArchiveEntryKey({ key: "State_finisch" }), "State_finisch");
 assert.deepStrictEqual(getLatestMessageArchiveItem([{ ...realMaItem, ts: 1 }, realMaItem, { ...realMaItem, ts: 2 }]), realMaItem);
+assert.deepStrictEqual(getLastMessageArchiveState([documentedMaItem, realMaItem]), {
+  key: "State_finisch",
+  text: "Trocknen fertig",
+  ts: 1786448765.923075,
+  time: new Date(1786448765.923075 * 1000).toLocaleString(),
+});
 
 const parsedConnection = parseAdapterConfig(
   { host: " 1.2.3.4 ", port: "81", ssl: true, authHeader: true },
@@ -99,6 +105,51 @@ assert.deepStrictEqual(separatedMaConfig.endpointKeys, ["CO@STATE_FINISCH", "CO@
 assert.equal(separatedMaConfig.endpointKeys.includes("CO@MA@TROCKNER"), false);
 assert.equal(separatedMaConfig.endpointKeys.includes("CO@TROCKNER_AUF"), false);
 assert.equal("testText" in separatedMaConfig.messageArchives[0], false);
+
+const foreignPrefixedEndpointConfig = parseAdapterConfig({
+  endpointKeys: [
+    { key: "MA@Trockner" },
+    { key: "DA@Test" },
+    { key: "CA@Test" },
+    { key: "SC@Test" },
+    { key: "SQ@Test" },
+    { key: "TI@Test" },
+    { key: "VC@Test" },
+    { key: "CP@Test" },
+    { key: "KLIMASOLLC" },
+  ],
+}, parserHelpers);
+assert.deepStrictEqual(foreignPrefixedEndpointConfig.endpointKeys, ["CO@KLIMASOLLC"]);
+assert.equal(isCommunicationObjectKey("MA@Trockner"), false);
+assert.equal(isCommunicationObjectKey("DA@Test"), false);
+assert.equal(isCommunicationObjectKey("KLIMASOLLC"), true);
+assert.equal(isCommunicationObjectKey("CO@STATE_FINISCH"), true);
+
+// A bare MA token is never imported by messageArchives, but remains a CO when
+// the administrator explicitly configured the same name as an endpoint.
+const explicitTokenCo = parseAdapterConfig({
+  endpointKeys: [{ key: "State_finisch" }],
+  messageArchives: [{ key: "Trockner", testToken: "State_finisch" }],
+}, parserHelpers);
+assert.deepStrictEqual(explicitTokenCo.endpointKeys, ["CO@STATE_FINISCH"]);
+
+const mixedSubscriptionKeys = buildSubscriptionKeys([
+  "CO@KLIMA_STATUSCODE14B",
+  "CO@KLIMASOLLC",
+  "CO@KLIMABEFEHLNODE",
+], ["MA@Trockner", "ma@trockner"]);
+assert.deepStrictEqual(mixedSubscriptionKeys, [
+  "CO@KLIMA_STATUSCODE14B",
+  "CO@KLIMASOLLC",
+  "CO@KLIMABEFEHLNODE",
+  "MA@Trockner",
+]);
+assert.equal(isMessageArchiveKey("MA@Trockner", mixedSubscriptionKeys.slice(3)), true);
+assert.equal(isMessageArchiveKey("CO@KLIMASOLLC", mixedSubscriptionKeys.slice(3)), false);
+assert.equal(getMessageArchiveSubscriptionKey({
+  request: { param: { keys: mixedSubscriptionKeys } },
+  data: { items: [{ key: "CO@KLIMASOLLC" }, { key: "MA@Trockner" }] },
+}, ["MA@Trockner"]), undefined);
 
 const parsedArchiveString = parseAdapterConfig(
   { dataArchives: "Archiv1 Archiv2" },
