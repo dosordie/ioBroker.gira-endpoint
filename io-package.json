@@ -1,8 +1,12 @@
 {
   "common": {
     "name": "gira-endpoint",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "news": {
+      "0.5.0": {
+        "en": "Add reliable MA@ message archive reads, subscriptions, and a guarded experimental write test with read-back verification",
+        "de": "Zuverlässiges Lesen und Abonnieren von MA@-Meldungsarchiven sowie abgesicherter experimenteller Schreibtest mit Rückleseprüfung"
+      },
       "0.4.0": {
         "en": "Add and improve DA@ data archive support with Gira get parameters, last-block queries, admin UI updates, and robust request matching",
         "de": "DA@ Datenarchive ergänzt und verbessert: korrekte Gira-get-Parameter, Letzte-Blöcke-Abfrage, aktualisierte Admin-UI und robustes Request-Matching"
@@ -76,24 +80,47 @@
     "mode": "daemon",
     "icon": "gira-endpoint.svg",
     "extIcon": "https://raw.githubusercontent.com/dosordie/iobroker.gira-endpoint/main/admin/gira-endpoint.svg",
-    "authors": ["you"],
-    "keywords": ["ioBroker", "gira", "homeserver", "websocket"],
+    "authors": [
+      "you"
+    ],
+    "keywords": [
+      "ioBroker",
+      "gira",
+      "homeserver",
+      "websocket"
+    ],
     "licenseInformation": {
       "license": "GPL-3.0-or-later",
       "type": "free"
     },
     "enabled": true,
     "materialize": false,
-    "adminUI": { "config": "json" },
+    "adminUI": {
+      "config": "json"
+    },
     "compact": true,
     "type": "protocols",
     "connectionType": "cloud",
     "dataSource": "push",
     "tier": 2,
-    "dependencies": [{"js-controller": ">=5.0.19"}]
+    "dependencies": [
+      {
+        "js-controller": ">=5.0.19"
+      }
+    ]
   },
-  "encryptedNative": ["password", "ca", "cert", "key"],
-  "protectedNative": ["password", "ca", "cert", "key"],
+  "encryptedNative": [
+    "password",
+    "ca",
+    "cert",
+    "key"
+  ],
+  "protectedNative": [
+    "password",
+    "ca",
+    "cert",
+    "key"
+  ],
   "native": {
     "host": "127.0.0.1",
     "port": 80,
@@ -113,14 +140,17 @@
     "updateLastEvent": false,
     "endpointKeys": [],
     "mappings": [],
-    "dataArchives": []
+    "dataArchives": [],
+    "messageArchives": []
   },
   "objects": [],
   "instanceObjects": [
     {
       "_id": "info",
       "type": "channel",
-      "common": { "name": "Information" },
+      "common": {
+        "name": "Information"
+      },
       "native": {}
     },
     {
@@ -159,12 +189,13 @@
         "write": false
       },
       "native": {}
-    }
-    ,
+    },
     {
       "_id": "command",
       "type": "channel",
-      "common": { "name": "Commands" },
+      "common": {
+        "name": "Commands"
+      },
       "native": {}
     },
     {

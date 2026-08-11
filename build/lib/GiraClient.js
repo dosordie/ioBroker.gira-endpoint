@@ -156,6 +156,7 @@ class GiraClient extends events_1.EventEmitter {
                     const fallbackRequest = payload?.request;
                     const err = new Error(formatCallError(payload, fallbackRequest));
                     err.code = payload.code;
+                    err.response = payload;
                     if (tag && this.tagResolvers.has(tag)) {
                         const resolver = this.tagResolvers.get(tag);
                         if (resolver?.timer)

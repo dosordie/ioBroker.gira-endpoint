@@ -564,6 +564,89 @@
           ]
         }
       }
+    },
+    "messageArchivesTab": {
+      "type": "panel",
+      "label": "Meldungsarchive",
+      "items": {
+        "messageArchivesHeader": {
+          "type": "header",
+          "text": "Meldungsarchive (MA@): Lesen offiziell, Schreiben experimentell",
+          "size": 2
+        },
+        "messageArchiveWarning": {
+          "type": "staticText",
+          "text": "Schreibtests sind nicht von Gira dokumentiert. Sie starten nur über den Objektbaum-Button und verwenden ausschließlich einen in meta vorhandenen, hier explizit eingetragenen Test-Token. Nach dem ersten nachgewiesenen Eintrag stoppt der Test."
+        },
+        "messageArchives": {
+          "type": "accordion",
+          "label": "Meldungsarchive",
+          "titleAttr": "key",
+          "items": [
+            {
+              "type": "text",
+              "attr": "key",
+              "label": "MA@",
+              "validator": "((data.key || '').trim().length > 0) && !((data.key || '').trim().toUpperCase().startsWith('MA@'))",
+              "validatorErrorText": "Pflichtfeld, ohne führendes MA@",
+              "validatorNoSaveOnError": true,
+              "xs": 12,
+              "md": 4
+            },
+            {
+              "type": "text",
+              "attr": "name",
+              "label": "Beschreibung",
+              "xs": 12,
+              "md": 5
+            },
+            {
+              "type": "checkbox",
+              "attr": "enabled",
+              "label": "Aktiviert",
+              "default": true,
+              "xs": 12,
+              "md": 3
+            },
+            {
+              "newLine": true,
+              "type": "number",
+              "attr": "count",
+              "label": "Letzte Einträge",
+              "min": 1,
+              "max": 100,
+              "default": 10,
+              "xs": 12,
+              "md": 4
+            },
+            {
+              "type": "text",
+              "attr": "testToken",
+              "label": "Sicherer Test-Token",
+              "help": "Muss exakt in den per meta gelesenen Tokens vorhanden sein. Wird niemals automatisch erfunden.",
+              "xs": 12,
+              "md": 4
+            },
+            {
+              "type": "text",
+              "attr": "testText",
+              "label": "Testtext",
+              "default": "ioBroker Test",
+              "xs": 12,
+              "md": 4
+            },
+            {
+              "newLine": true,
+              "type": "checkbox",
+              "attr": "experimentalWrite",
+              "label": "Experimentellen Schreibtest freigeben",
+              "default": false,
+              "help": "Allein diese Freigabe sendet noch nichts; der Test muss zusätzlich im Objektbaum ausgelöst werden.",
+              "xs": 12
+            }
+          ]
+        }
+      }
     }
   }
 }

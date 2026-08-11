@@ -3,7 +3,8 @@ import { GiraClient, codeToMessage } from "./lib/GiraClient";
 import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
-import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults } from "./lib/configParser";
+import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults, MessageArchiveConfig } from "./lib/configParser";
+import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, extractMessageArchiveTokens, findNewMessageArchiveItems, getMessageArchiveItems } from "./lib/messageArchive";
 import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
 
 // Configuration options provided by ioBroker's admin interface
@@ -71,6 +72,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
       textEncoding?: TextEncoding;
     }[];
   }[];
+  messageArchives?: MessageArchiveConfig[];
   dataArchives?:
     | string[]
     | {
@@ -117,6 +119,10 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveDescMap = new Map<string, string>();
   private archiveQueryDefaults = new Map<string, ArchiveQueryDefaults>();
   private fetchedMeta = new Set<string>();
+  private messageArchives: MessageArchiveConfig[] = [];
+  private messageArchiveIdKeyMap = new Map<string, string>();
+  private messageArchiveConfigMap = new Map<string, MessageArchiveConfig>();
+  private messageArchiveWriteRunning = new Set<string>();
 
 
   private formatLogValue(value: any, maxLength = 200): string {
@@ -240,6 +246,12 @@ class GiraEndpointAdapter extends utils.Adapter {
         native: {},
       });
 
+      await this.setObjectNotExistsAsync("MA@", {
+        type: "channel",
+        common: { name: this.translate("MA@") },
+        native: {},
+      });
+
       await this.setObjectNotExistsAsync("DA@", {
         type: "channel",
         common: { name: this.translate("DA@") },
@@ -282,6 +294,8 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.archiveKeys = parsed.archiveKeys;
       this.archiveDescMap = parsed.archiveDescMap;
       this.archiveQueryDefaults = parsed.archiveQueryDefaults;
+      this.messageArchives = parsed.messageArchives;
+      this.messageArchiveConfigMap = new Map(parsed.messageArchives.map((archive) => [archive.key, archive]));
 
       for (const key of this.endpointKeys) {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
@@ -508,6 +522,27 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.subscribeStates(`${baseId}.last`);
       }
 
+      for (const archive of this.messageArchives) {
+        const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+        this.messageArchiveIdKeyMap.set(baseId, archive.key);
+        await this.setObjectNotExistsAsync(baseId, { type: "channel", common: { name: archive.name }, native: {} });
+        const states: Array<[string, ioBroker.StateCommon]> = [
+          ["meta", { name: "Metadaten", type: "string", role: "json", read: true, write: false }],
+          ["tokens", { name: "Tokens", type: "string", role: "json", read: true, write: false }],
+          ["items", { name: "Letzte Meldungen", type: "string", role: "json", read: true, write: false }],
+          ["lastWriteReport", { name: "Schreibtest-Protokoll", type: "string", role: "json", read: true, write: false }],
+          ["read", { name: "Meldungsarchiv lesen", type: "boolean", role: "button", read: true, write: true, def: false }],
+          ["testWrite", { name: "Experimentellen Schreibtest starten", type: "boolean", role: "button", read: true, write: true, def: false }],
+        ];
+        for (const [stateName, common] of states) {
+          await this.setObjectNotExistsAsync(`${baseId}.${stateName}`, { type: "state", common, native: {} });
+        }
+        await this.setStateAsync(`${baseId}.read`, { val: false, ack: true });
+        await this.setStateAsync(`${baseId}.testWrite`, { val: false, ack: true });
+        this.subscribeStates(`${baseId}.read`);
+        this.subscribeStates(`${baseId}.testWrite`);
+      }
+
       const validBaseIds = new Set(
         this.endpointKeys.map((k) => this.makeEndpointBaseId(k))
       );
@@ -608,6 +643,14 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.pendingSubscriptions.clear();
           this.client!.subscribe([]);
         }
+        if (this.messageArchives.length) {
+          this.client!.subscribe(this.messageArchives.map((archive) => archive.key));
+          for (const archive of this.messageArchives) {
+            void this.readMessageArchive(archive).catch((err: any) => {
+              this.log.error(`MA read failed key=${archive.key}: ${err?.message || err}`);
+            });
+          }
+        }
         for (const [key, params] of this.archiveQueryDefaults.entries()) {
           const baseId = this.archiveKeyIdMap.get(key);
           if (!baseId) continue;
@@ -690,8 +733,22 @@ class GiraEndpointAdapter extends utils.Adapter {
         const data = payload?.data;
         if (!data) return;
 
+        const subscriptionKey = String(payload?.subscription?.key ?? data?.key ?? data?.uid ?? "");
+        if (/^MA@/i.test(subscriptionKey)) {
+          const archive = this.messageArchiveConfigMap.get(subscriptionKey) ??
+            this.messageArchives.find((candidate) => candidate.key.toLowerCase() === subscriptionKey.toLowerCase());
+          if (archive) {
+            const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+            const items = getMessageArchiveItems(payload);
+            const value = items.length ? items : data;
+            await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(value), ack: true });
+            this.log.info(`MA subscription event key=${archive.key} response=${JSON.stringify(payload)}`);
+          }
+          return;
+        }
+
         const tag = payload?.tag;
-        if (typeof tag === "string" && tag.startsWith("meta_")) {
+        if (typeof tag === "string" && (tag.startsWith("meta_") || tag.startsWith("ma_meta_"))) {
           // Responses for meta calls are handled separately
           return;
         }
@@ -1257,6 +1314,8 @@ class GiraEndpointAdapter extends utils.Adapter {
     const mapped = this.forwardMap.get(id);
     if (mapped && this.handleMappedStateChange(id, state, mapped)) return;
 
+    if (this.handleMessageArchiveStateChange(id, state)) return;
+
     if (this.handleArchiveStateChange(id, state)) return;
 
     if (this.handleDirectCoStateChange(id, state)) return;
@@ -1307,6 +1366,85 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.clearTimeout(timer);
     }, 1000);
     return true;
+  }
+
+  private handleMessageArchiveStateChange(id: string, state: ioBroker.State): boolean {
+    if (!id.startsWith("MA@.")) return false;
+    if (state.ack) return true;
+    const parts = id.split(".");
+    const action = parts.pop();
+    const baseId = parts.join(".");
+    const key = this.messageArchiveIdKeyMap.get(baseId);
+    const archive = key ? this.messageArchiveConfigMap.get(key) : undefined;
+    if (!archive || (action !== "read" && action !== "testWrite")) return true;
+    void this.setStateAsync(id, { val: false, ack: true });
+    if (state.val !== true) return true;
+    if (action === "read") {
+      void this.readMessageArchive(archive).catch((err: any) => {
+        this.log.error(`MA read failed key=${archive.key}: ${err?.message || err}`);
+      });
+    }
+    else void this.runExperimentalMessageArchiveWrite(archive);
+    return true;
+  }
+
+  private async readMessageArchive(archive: MessageArchiveConfig): Promise<{ meta: any; get: any; tokens: string[] }> {
+    const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+    const meta = await this.client!.call(archive.key, "meta", undefined, this.makeTag("ma_meta"));
+    const tokens = extractMessageArchiveTokens(meta?.data);
+    await this.setStateAsync(`${baseId}.meta`, { val: JSON.stringify(meta?.data), ack: true });
+    await this.setStateAsync(`${baseId}.tokens`, { val: JSON.stringify(tokens), ack: true });
+    this.log.info(`MA read meta key=${archive.key} response=${JSON.stringify(meta)}`);
+    const get = await this.client!.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_get"));
+    const items = getMessageArchiveItems(get);
+    await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+    this.log.info(`MA read get key=${archive.key} count=${archive.count} response=${JSON.stringify(get)}`);
+    return { meta, get, tokens };
+  }
+
+  private async runExperimentalMessageArchiveWrite(archive: MessageArchiveConfig): Promise<void> {
+    const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+    if (this.messageArchiveWriteRunning.has(archive.key)) return;
+    this.messageArchiveWriteRunning.add(archive.key);
+    const report: any = { key: archive.key, officialRead: {}, experimentalWrite: [], created: false };
+    try {
+      if (!archive.experimentalWrite) throw new Error("Experimenteller Schreibtest ist in der Konfiguration nicht freigegeben.");
+      const initial = await this.readMessageArchive(archive);
+      report.officialRead = { metaCode: initial.meta?.code, getCode: initial.get?.code, tokens: initial.tokens };
+      if (!archive.testToken) throw new Error("Kein sicherer Test-Token konfiguriert; es wird kein Token erfunden.");
+      if (!initial.tokens.includes(archive.testToken)) throw new Error(`Test-Token ${archive.testToken} ist nicht in meta vorhanden.`);
+      let before = initial.get;
+      for (const method of EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS) {
+        // Deliberately keep every probe minimal. More parameter variants would
+        // multiply side effects without adding a safe, documented guarantee.
+        const request = { type: "call", param: { key: archive.key, method, token: archive.testToken } };
+        const attempt: any = { method, request };
+        try {
+          const response = await this.client!.call(archive.key, method, { token: archive.testToken }, this.makeTag(`ma_${method}`));
+          attempt.statusCode = response?.code;
+          attempt.response = response;
+        } catch (err: any) {
+          attempt.statusCode = err?.code;
+          attempt.response = err?.response ?? { error: err?.message || String(err) };
+        }
+        this.log.info(`MA experimental write key=${archive.key} method=${method} response=${JSON.stringify(attempt.response)}`);
+        const after = await this.client!.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_verify"));
+        attempt.verificationResponse = after;
+        attempt.newItems = findNewMessageArchiveItems(before, after);
+        attempt.created = attempt.newItems.some((item: any) => String(item?.token) === archive.testToken);
+        report.experimentalWrite.push(attempt);
+        await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(getMessageArchiveItems(after)), ack: true });
+        await this.setStateAsync(`${baseId}.lastWriteReport`, { val: JSON.stringify(report), ack: true });
+        if (attempt.created) { report.created = true; report.successfulRequest = request; break; }
+        before = after;
+      }
+    } catch (err: any) {
+      report.error = err?.message || String(err);
+      this.log.error(`MA experimental write aborted key=${archive.key}: ${report.error}`);
+    } finally {
+      await this.setStateAsync(`${baseId}.lastWriteReport`, { val: JSON.stringify(report), ack: true });
+      this.messageArchiveWriteRunning.delete(archive.key);
+    }
   }
 
   private handleArchiveStateChange(id: string, state: ioBroker.State): boolean {

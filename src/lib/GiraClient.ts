@@ -203,6 +203,7 @@ export class GiraClient extends EventEmitter {
           const fallbackRequest = payload?.request;
           const err: any = new Error(formatCallError(payload, fallbackRequest));
           err.code = payload.code;
+          err.response = payload;
           if (tag && this.tagResolvers.has(tag)) {
             const resolver = this.tagResolvers.get(tag);
             if (resolver?.timer) clearTimeout(resolver.timer as any);

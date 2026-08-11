@@ -17,6 +17,28 @@ So lassen sich Schaltzustände, Sensorwerte oder Szenen aus dem Gira-System naht
 - Optionale 0/1 ↔ true/false-Umwandlung pro Mapping -> so wird aus einem 0/1 vom HS ein False / True für andere Zwecke
 - Initiale Aktualisierung beim Adapterstart pro Endpunkt einzeln deaktivierbar
 - Deaktivierte Initialaktualisierung bleibt auch nach Verbindungsabbrüchen erhalten
+- Meldungsarchive (`MA@`) per offiziell dokumentiertem `meta` und `get` auslesen und per WebSocket abonnieren
+- Optionaler, ausdrücklich freizugebender Test undokumentierter MA-Schreibmethoden mit Prüfung nach jedem einzelnen Versuch
+
+### Meldungsarchive (MA@)
+
+Meldungsarchive werden im Admin-Tab **Meldungsarchive** ohne den führenden
+`MA@`-Präfix eingetragen. Nach dem Verbinden liest der Adapter zuerst die
+Metadaten (`meta`) und anschließend die letzten konfigurierten Einträge mit
+`get`/`count`. Metadaten, erkannte Tokens und Einträge stehen unter `MA@.<Archiv>`
+im Objektbaum. Der Button `read` wiederholt den offiziellen Lesevorgang.
+
+Das Schreiben in Meldungsarchive ist **nicht von Gira dokumentiert**. Der
+Adapter sendet deshalb niemals automatisch einen Schreibversuch. Ein Test ist
+nur möglich, wenn in der Konfiguration „Experimentellen Schreibtest freigeben“
+aktiviert und ein sicherer Test-Token explizit angegeben wurde. Dieser Token
+muss zusätzlich in der unmittelbar zuvor gelesenen `meta`-Antwort vorkommen.
+Danach startet der Button `testWrite` die Methoden `add`, `write`, `insert`,
+`set`, `add_entry`, `add_message`, `trigger` und `call` einzeln in dieser
+Reihenfolge. Nach jedem Request wird das Archiv erneut gelesen; beim ersten
+nachgewiesenen neuen Eintrag wird sofort abgebrochen. Request, vollständige
+Antwort, Statuscode und Verifikation werden in `lastWriteReport` protokolliert.
+Ein Statuscode `0` allein gilt ausdrücklich nicht als Schreibnachweis.
 
 ### Usage
 Eingabewerte können sein:  true | false | toggle | String | Number
@@ -62,6 +84,10 @@ Wenn er dir gefällt oder dir weiterhilft, freue ich mich über eine kleine Spen
 [GPLv3](LICENSE)
 
 ## Changelog
+
+### 0.5.0
+* Add official `meta`/`get` reads and WebSocket subscriptions for configured `MA@` message archives
+* Add guarded experimental write probes with existing-token validation, complete diagnostics, and read-back verification after every attempt
 
 ### 0.4.0
 * Add Latin1/UTF-8 text encoding for CO@ texts and decode incoming CO@ text values

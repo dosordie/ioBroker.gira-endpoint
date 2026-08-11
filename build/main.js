@@ -39,6 +39,7 @@ const crypto_1 = require("crypto");
 const util_1 = require("util");
 const valueConversion_1 = require("./lib/valueConversion");
 const configParser_1 = require("./lib/configParser");
+const messageArchive_1 = require("./lib/messageArchive");
 const archiveQuery_1 = require("./lib/archiveQuery");
 class GiraEndpointAdapter extends utils.Adapter {
     formatLogValue(value, maxLength = 200) {
@@ -91,6 +92,10 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.archiveDescMap = new Map();
         this.archiveQueryDefaults = new Map();
         this.fetchedMeta = new Set();
+        this.messageArchives = [];
+        this.messageArchiveIdKeyMap = new Map();
+        this.messageArchiveConfigMap = new Map();
+        this.messageArchiveWriteRunning = new Set();
         const origTranslate = this.translate;
         this.translate = (text, ...args) => {
             if (typeof origTranslate === "function") {
@@ -167,6 +172,11 @@ class GiraEndpointAdapter extends utils.Adapter {
                 common: { name: this.translate("CO@") },
                 native: {},
             });
+            await this.setObjectNotExistsAsync("MA@", {
+                type: "channel",
+                common: { name: this.translate("MA@") },
+                native: {},
+            });
             await this.setObjectNotExistsAsync("DA@", {
                 type: "channel",
                 common: { name: this.translate("DA@") },
@@ -192,6 +202,8 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.archiveKeys = parsed.archiveKeys;
             this.archiveDescMap = parsed.archiveDescMap;
             this.archiveQueryDefaults = parsed.archiveQueryDefaults;
+            this.messageArchives = parsed.messageArchives;
+            this.messageArchiveConfigMap = new Map(parsed.messageArchives.map((archive) => [archive.key, archive]));
             for (const key of this.endpointKeys) {
                 if (!this.keyDescMap.has(key))
                     this.keyDescMap.set(key, key);
@@ -398,6 +410,26 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.subscribeStates(`${baseId}.query`);
                 this.subscribeStates(`${baseId}.last`);
             }
+            for (const archive of this.messageArchives) {
+                const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+                this.messageArchiveIdKeyMap.set(baseId, archive.key);
+                await this.setObjectNotExistsAsync(baseId, { type: "channel", common: { name: archive.name }, native: {} });
+                const states = [
+                    ["meta", { name: "Metadaten", type: "string", role: "json", read: true, write: false }],
+                    ["tokens", { name: "Tokens", type: "string", role: "json", read: true, write: false }],
+                    ["items", { name: "Letzte Meldungen", type: "string", role: "json", read: true, write: false }],
+                    ["lastWriteReport", { name: "Schreibtest-Protokoll", type: "string", role: "json", read: true, write: false }],
+                    ["read", { name: "Meldungsarchiv lesen", type: "boolean", role: "button", read: true, write: true, def: false }],
+                    ["testWrite", { name: "Experimentellen Schreibtest starten", type: "boolean", role: "button", read: true, write: true, def: false }],
+                ];
+                for (const [stateName, common] of states) {
+                    await this.setObjectNotExistsAsync(`${baseId}.${stateName}`, { type: "state", common, native: {} });
+                }
+                await this.setStateAsync(`${baseId}.read`, { val: false, ack: true });
+                await this.setStateAsync(`${baseId}.testWrite`, { val: false, ack: true });
+                this.subscribeStates(`${baseId}.read`);
+                this.subscribeStates(`${baseId}.testWrite`);
+            }
             const validBaseIds = new Set(this.endpointKeys.map((k) => this.makeEndpointBaseId(k)));
             const validArchiveBases = new Set(this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`));
             const objs = await this.getAdapterObjectsAsync();
@@ -485,6 +517,14 @@ class GiraEndpointAdapter extends utils.Adapter {
                     this.pendingSubscriptions.clear();
                     this.client.subscribe([]);
                 }
+                if (this.messageArchives.length) {
+                    this.client.subscribe(this.messageArchives.map((archive) => archive.key));
+                    for (const archive of this.messageArchives) {
+                        void this.readMessageArchive(archive).catch((err) => {
+                            this.log.error(`MA read failed key=${archive.key}: ${err?.message || err}`);
+                        });
+                    }
+                }
                 for (const [key, params] of this.archiveQueryDefaults.entries()) {
                     const baseId = this.archiveKeyIdMap.get(key);
                     if (!baseId)
@@ -554,8 +594,21 @@ class GiraEndpointAdapter extends utils.Adapter {
                 const data = payload?.data;
                 if (!data)
                     return;
+                const subscriptionKey = String(payload?.subscription?.key ?? data?.key ?? data?.uid ?? "");
+                if (/^MA@/i.test(subscriptionKey)) {
+                    const archive = this.messageArchiveConfigMap.get(subscriptionKey) ??
+                        this.messageArchives.find((candidate) => candidate.key.toLowerCase() === subscriptionKey.toLowerCase());
+                    if (archive) {
+                        const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+                        const items = (0, messageArchive_1.getMessageArchiveItems)(payload);
+                        const value = items.length ? items : data;
+                        await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(value), ack: true });
+                        this.log.info(`MA subscription event key=${archive.key} response=${JSON.stringify(payload)}`);
+                    }
+                    return;
+                }
                 const tag = payload?.tag;
-                if (typeof tag === "string" && tag.startsWith("meta_")) {
+                if (typeof tag === "string" && (tag.startsWith("meta_") || tag.startsWith("ma_meta_"))) {
                     // Responses for meta calls are handled separately
                     return;
                 }
@@ -1042,6 +1095,8 @@ class GiraEndpointAdapter extends utils.Adapter {
         const mapped = this.forwardMap.get(id);
         if (mapped && this.handleMappedStateChange(id, state, mapped))
             return;
+        if (this.handleMessageArchiveStateChange(id, state))
+            return;
         if (this.handleArchiveStateChange(id, state))
             return;
         if (this.handleDirectCoStateChange(id, state))
@@ -1082,6 +1137,98 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.clearTimeout(timer);
         }, 1000);
         return true;
+    }
+    handleMessageArchiveStateChange(id, state) {
+        if (!id.startsWith("MA@."))
+            return false;
+        if (state.ack)
+            return true;
+        const parts = id.split(".");
+        const action = parts.pop();
+        const baseId = parts.join(".");
+        const key = this.messageArchiveIdKeyMap.get(baseId);
+        const archive = key ? this.messageArchiveConfigMap.get(key) : undefined;
+        if (!archive || (action !== "read" && action !== "testWrite"))
+            return true;
+        void this.setStateAsync(id, { val: false, ack: true });
+        if (state.val !== true)
+            return true;
+        if (action === "read") {
+            void this.readMessageArchive(archive).catch((err) => {
+                this.log.error(`MA read failed key=${archive.key}: ${err?.message || err}`);
+            });
+        }
+        else
+            void this.runExperimentalMessageArchiveWrite(archive);
+        return true;
+    }
+    async readMessageArchive(archive) {
+        const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+        const meta = await this.client.call(archive.key, "meta", undefined, this.makeTag("ma_meta"));
+        const tokens = (0, messageArchive_1.extractMessageArchiveTokens)(meta?.data);
+        await this.setStateAsync(`${baseId}.meta`, { val: JSON.stringify(meta?.data), ack: true });
+        await this.setStateAsync(`${baseId}.tokens`, { val: JSON.stringify(tokens), ack: true });
+        this.log.info(`MA read meta key=${archive.key} response=${JSON.stringify(meta)}`);
+        const get = await this.client.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_get"));
+        const items = (0, messageArchive_1.getMessageArchiveItems)(get);
+        await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+        this.log.info(`MA read get key=${archive.key} count=${archive.count} response=${JSON.stringify(get)}`);
+        return { meta, get, tokens };
+    }
+    async runExperimentalMessageArchiveWrite(archive) {
+        const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+        if (this.messageArchiveWriteRunning.has(archive.key))
+            return;
+        this.messageArchiveWriteRunning.add(archive.key);
+        const report = { key: archive.key, officialRead: {}, experimentalWrite: [], created: false };
+        try {
+            if (!archive.experimentalWrite)
+                throw new Error("Experimenteller Schreibtest ist in der Konfiguration nicht freigegeben.");
+            const initial = await this.readMessageArchive(archive);
+            report.officialRead = { metaCode: initial.meta?.code, getCode: initial.get?.code, tokens: initial.tokens };
+            if (!archive.testToken)
+                throw new Error("Kein sicherer Test-Token konfiguriert; es wird kein Token erfunden.");
+            if (!initial.tokens.includes(archive.testToken))
+                throw new Error(`Test-Token ${archive.testToken} ist nicht in meta vorhanden.`);
+            let before = initial.get;
+            for (const method of messageArchive_1.EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS) {
+                // Deliberately keep every probe minimal. More parameter variants would
+                // multiply side effects without adding a safe, documented guarantee.
+                const request = { type: "call", param: { key: archive.key, method, token: archive.testToken } };
+                const attempt = { method, request };
+                try {
+                    const response = await this.client.call(archive.key, method, { token: archive.testToken }, this.makeTag(`ma_${method}`));
+                    attempt.statusCode = response?.code;
+                    attempt.response = response;
+                }
+                catch (err) {
+                    attempt.statusCode = err?.code;
+                    attempt.response = err?.response ?? { error: err?.message || String(err) };
+                }
+                this.log.info(`MA experimental write key=${archive.key} method=${method} response=${JSON.stringify(attempt.response)}`);
+                const after = await this.client.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_verify"));
+                attempt.verificationResponse = after;
+                attempt.newItems = (0, messageArchive_1.findNewMessageArchiveItems)(before, after);
+                attempt.created = attempt.newItems.some((item) => String(item?.token) === archive.testToken);
+                report.experimentalWrite.push(attempt);
+                await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify((0, messageArchive_1.getMessageArchiveItems)(after)), ack: true });
+                await this.setStateAsync(`${baseId}.lastWriteReport`, { val: JSON.stringify(report), ack: true });
+                if (attempt.created) {
+                    report.created = true;
+                    report.successfulRequest = request;
+                    break;
+                }
+                before = after;
+            }
+        }
+        catch (err) {
+            report.error = err?.message || String(err);
+            this.log.error(`MA experimental write aborted key=${archive.key}: ${report.error}`);
+        }
+        finally {
+            await this.setStateAsync(`${baseId}.lastWriteReport`, { val: JSON.stringify(report), ack: true });
+            this.messageArchiveWriteRunning.delete(archive.key);
+        }
     }
     handleArchiveStateChange(id, state) {
         if (!id.startsWith("DA@."))
