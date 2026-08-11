@@ -3,6 +3,7 @@ import { GiraClient, codeToMessage } from "./lib/GiraClient";
 import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
+import { CoMetaValueType, getCoMetaFormat, getCoMetaFormatText, getCoMetaValueType } from "./lib/coMeta";
 import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults, MessageArchiveConfig } from "./lib/configParser";
 import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, buildMessageArchiveWriteRequest, buildSubscriptionKeys, extractMessageArchiveTokens, findNewMessageArchiveItems, getLastMessageArchiveState, getMessageArchiveEntryKey, getMessageArchiveEventItems, getMessageArchiveItems, getMessageArchiveSubscriptionKey, isMessageArchiveKey, messageArchiveWriteCreated, sanitizeArchiveId } from "./lib/messageArchive";
 import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
@@ -120,6 +121,8 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveDescMap = new Map<string, string>();
   private archiveQueryDefaults = new Map<string, ArchiveQueryDefaults>();
   private fetchedMeta = new Set<string>();
+  private coMetaFormats = new Map<string, number>();
+  private coMetaValueTypes = new Map<string, CoMetaValueType>();
   private messageArchives: MessageArchiveConfig[] = [];
   private messageArchiveIdKeyMap = new Map<string, string>();
   private messageArchiveConfigMap = new Map<string, MessageArchiveConfig>();
@@ -146,11 +149,17 @@ class GiraEndpointAdapter extends utils.Adapter {
     uidValue: string;
     bool: boolean;
     textEncoding: TextEncoding;
+    metaFormat?: number;
+    metaValueType: CoMetaValueType;
   }): void {
     const statePart = args.stateId ? ` stateId=${args.stateId}` : "";
     this.log.debug(
-      `Sending CO value source=${args.source}${statePart} key=${args.key} method=${args.method} ackVal=${this.formatLogValue(args.ackVal)} uidValue=${this.formatLogValue(args.uidValue)} bool=${args.bool} textEncoding=${args.textEncoding}`
+      `Sending CO value source=${args.source}${statePart} key=${args.key} method=${args.method} metaFormat=${args.metaFormat ?? "unknown"} metaValueType=${args.metaValueType} ackVal=${this.formatLogValue(args.ackVal)} uidValue=${this.formatLogValue(args.uidValue)} boolMapping=${args.bool} textEncoding=${args.textEncoding}`
     );
+  }
+
+  private getCoCallParams(uidValue: string, metaValueType: CoMetaValueType): any {
+    return metaValueType === "string" ? { value: uidValue, encoding: "base64" } : uidValue;
   }
 
   private notifyAdmin(message: string): void {
@@ -394,6 +403,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           },
           native: {},
         });
+        await this.ensureCoMetaStates(baseId);
         this.log.debug(
           this.translate("Pre-created endpoint channel %s", baseId)
         );
@@ -994,7 +1004,8 @@ class GiraEndpointAdapter extends utils.Adapter {
           const boolKey = this.boolKeys.has(normalized);
           const textEncoding = this.keyTextEncodingMap.get(normalized) ?? "utf8";
           const rawVal = data.value;
-          const decoded = decodeCoValue(rawVal, boolKey, textEncoding);
+          const metaValueType = this.coMetaValueTypes.get(normalized) ?? "unknown";
+          const decoded = decodeCoValue(rawVal, boolKey, textEncoding, metaValueType);
           const value = decoded.value;
           const type = decoded.type;
 
@@ -1217,18 +1228,52 @@ class GiraEndpointAdapter extends utils.Adapter {
     archive = false
   ): Promise<void> {
     if (!meta || typeof meta !== "object") return;
-    const name = meta.desc || meta.name || meta.label;
-    if (!name) return;
+    const name = meta.caption || meta.desc || meta.name || meta.label;
     if (archive) {
-      this.archiveDescMap.set(key, name);
+      if (name) this.archiveDescMap.set(key, name);
     } else {
-      this.keyDescMap.set(key, name);
+      if (name) this.keyDescMap.set(key, name);
+      const format = getCoMetaFormat(meta);
+      const valueType = getCoMetaValueType(meta);
+      if (format !== undefined) this.coMetaFormats.set(key, format);
+      this.coMetaValueTypes.set(key, valueType);
+      await this.ensureCoMetaStates(baseId);
+      await this.setStateAsync(`${baseId}.metaFormat`, { val: format ?? null, ack: true });
+      await this.setStateAsync(`${baseId}.metaFormatText`, {
+        val: getCoMetaFormatText(meta) ?? "Unknown",
+        ack: true,
+      });
+      await this.setStateAsync(`${baseId}.metaValueType`, { val: valueType, ack: true });
+      if (valueType !== "unknown") {
+        await this.extendObjectAsync(`${baseId}.value`, {
+          type: "state",
+          common: { type: valueType },
+          native: {},
+        });
+      }
     }
-    await this.extendObjectAsync(baseId, {
-      type: "channel",
-      common: { name },
-      native: {},
-    });
+    if (name) {
+      await this.extendObjectAsync(baseId, {
+        type: "channel",
+        common: { name },
+        native: {},
+      });
+    }
+  }
+
+  private async ensureCoMetaStates(baseId: string): Promise<void> {
+    const states: Array<[string, ioBroker.StateCommon["type"], string]> = [
+      ["metaFormat", "number", "Gira format"],
+      ["metaFormatText", "string", "Gira format description"],
+      ["metaValueType", "string", "Gira value type"],
+    ];
+    for (const [suffix, type, name] of states) {
+      await this.extendObjectAsync(`${baseId}.${suffix}`, {
+        type: "state",
+        common: { name, type, role: "info", read: true, write: false },
+        native: {},
+      });
+    }
   }
 
   private async fetchMeta(key: string, baseId: string): Promise<void> {
@@ -1276,7 +1321,16 @@ class GiraEndpointAdapter extends utils.Adapter {
           : await this.getStateAsync(src.stateId);
         if (!state) continue;
 
-        const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool, src.textEncoding);
+        if (state.val === null || state.val === undefined) {
+          this.log.debug(`Skipping mapping source=updateOnStart stateId=${src.stateId} key=${src.key} because source value is null/undefined`);
+          continue;
+        }
+        const metaValueType = this.coMetaValueTypes.get(src.key) ?? "unknown";
+        if (metaValueType === "string" && src.bool) {
+          this.log.warn(`${src.key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+        }
+        const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool, src.textEncoding, metaValueType);
+        if (uidValue === undefined) continue;
         this.logOutgoingCoValue({
           source: "updateOnStart",
           stateId: src.stateId,
@@ -1286,8 +1340,10 @@ class GiraEndpointAdapter extends utils.Adapter {
           uidValue,
           bool: src.bool,
           textEncoding: src.textEncoding,
+          metaFormat: this.coMetaFormats.get(src.key),
+          metaValueType,
         });
-        this.client.call(src.key, method, uidValue);
+        this.client.call(src.key, method, this.getCoCallParams(uidValue, metaValueType));
 
         const baseId = this.keyIdMap.get(src.key) ?? this.makeEndpointBaseId(src.key);
         this.keyIdMap.set(src.key, baseId);
@@ -1386,7 +1442,16 @@ class GiraEndpointAdapter extends utils.Adapter {
       );
       return true;
     }
-    const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool, mapped.textEncoding);
+    if (state.val === null || state.val === undefined) {
+      this.log.debug(`Skipping mapping stateId=${id} key=${mapped.key} because source value is null/undefined`);
+      return true;
+    }
+    const metaValueType = this.coMetaValueTypes.get(mapped.key) ?? "unknown";
+    if (metaValueType === "string" && mapped.bool) {
+      this.log.warn(`${mapped.key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+    }
+    const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool, mapped.textEncoding, metaValueType);
+    if (uidValue === undefined) return true;
     this.logOutgoingCoValue({
       source: "mapping",
       stateId: id,
@@ -1396,8 +1461,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       uidValue,
       bool: mapped.bool,
       textEncoding: mapped.textEncoding,
+      metaFormat: this.coMetaFormats.get(mapped.key),
+      metaValueType,
     });
-    this.client!.call(mapped.key, method, uidValue);
+    this.client!.call(mapped.key, method, this.getCoCallParams(uidValue, metaValueType));
     const baseId =
       this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
     this.keyIdMap.set(mapped.key, baseId);
@@ -1719,7 +1786,16 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
     const boolKey = this.boolKeys.has(key);
     const textEncoding = this.keyTextEncodingMap.get(key) ?? "utf8";
-    const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey, textEncoding);
+    if (state.val === null || state.val === undefined) {
+      this.log.debug(`Skipping direct CO write key=${key} because source value is null/undefined`);
+      return true;
+    }
+    const metaValueType = this.coMetaValueTypes.get(key) ?? "unknown";
+    if (metaValueType === "string" && boolKey) {
+      this.log.warn(`${key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+    }
+    const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey, textEncoding, metaValueType);
+    if (uidValue === undefined) return true;
     this.logOutgoingCoValue({
       source: "direct",
       stateId: id,
@@ -1729,8 +1805,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       uidValue,
       bool: boolKey,
       textEncoding,
+      metaFormat: this.coMetaFormats.get(key),
+      metaValueType,
     });
-    this.client!.call(key, method, uidValue);
+    this.client!.call(key, method, this.getCoCallParams(uidValue, metaValueType));
     const mappedForeign = this.reverseMap.get(key);
     if (mappedForeign) {
       let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;

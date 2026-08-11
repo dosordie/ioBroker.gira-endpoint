@@ -38,6 +38,7 @@ const GiraClient_1 = require("./lib/GiraClient");
 const crypto_1 = require("crypto");
 const util_1 = require("util");
 const valueConversion_1 = require("./lib/valueConversion");
+const coMeta_1 = require("./lib/coMeta");
 const configParser_1 = require("./lib/configParser");
 const messageArchive_1 = require("./lib/messageArchive");
 const archiveQuery_1 = require("./lib/archiveQuery");
@@ -56,7 +57,10 @@ class GiraEndpointAdapter extends utils.Adapter {
     }
     logOutgoingCoValue(args) {
         const statePart = args.stateId ? ` stateId=${args.stateId}` : "";
-        this.log.debug(`Sending CO value source=${args.source}${statePart} key=${args.key} method=${args.method} ackVal=${this.formatLogValue(args.ackVal)} uidValue=${this.formatLogValue(args.uidValue)} bool=${args.bool} textEncoding=${args.textEncoding}`);
+        this.log.debug(`Sending CO value source=${args.source}${statePart} key=${args.key} method=${args.method} metaFormat=${args.metaFormat ?? "unknown"} metaValueType=${args.metaValueType} ackVal=${this.formatLogValue(args.ackVal)} uidValue=${this.formatLogValue(args.uidValue)} boolMapping=${args.bool} textEncoding=${args.textEncoding}`);
+    }
+    getCoCallParams(uidValue, metaValueType) {
+        return metaValueType === "string" ? { value: uidValue, encoding: "base64" } : uidValue;
     }
     notifyAdmin(message) {
         this.sendTo("admin", "messageBox", {
@@ -93,6 +97,8 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.archiveDescMap = new Map();
         this.archiveQueryDefaults = new Map();
         this.fetchedMeta = new Set();
+        this.coMetaFormats = new Map();
+        this.coMetaValueTypes = new Map();
         this.messageArchives = [];
         this.messageArchiveIdKeyMap = new Map();
         this.messageArchiveConfigMap = new Map();
@@ -286,6 +292,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     },
                     native: {},
                 });
+                await this.ensureCoMetaStates(baseId);
                 this.log.debug(this.translate("Pre-created endpoint channel %s", baseId));
                 this.subscribeStates(`${baseId}.value`);
                 this.subscribeStates(`${baseId}.meta`);
@@ -835,7 +842,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                     const boolKey = this.boolKeys.has(normalized);
                     const textEncoding = this.keyTextEncodingMap.get(normalized) ?? "utf8";
                     const rawVal = data.value;
-                    const decoded = (0, valueConversion_1.decodeCoValue)(rawVal, boolKey, textEncoding);
+                    const metaValueType = this.coMetaValueTypes.get(normalized) ?? "unknown";
+                    const decoded = (0, valueConversion_1.decodeCoValue)(rawVal, boolKey, textEncoding, metaValueType);
                     const value = decoded.value;
                     const type = decoded.type;
                     const pending = this.pendingUpdates.get(normalized);
@@ -1017,20 +1025,55 @@ class GiraEndpointAdapter extends utils.Adapter {
     async applyMeta(key, baseId, meta, archive = false) {
         if (!meta || typeof meta !== "object")
             return;
-        const name = meta.desc || meta.name || meta.label;
-        if (!name)
-            return;
+        const name = meta.caption || meta.desc || meta.name || meta.label;
         if (archive) {
-            this.archiveDescMap.set(key, name);
+            if (name)
+                this.archiveDescMap.set(key, name);
         }
         else {
-            this.keyDescMap.set(key, name);
+            if (name)
+                this.keyDescMap.set(key, name);
+            const format = (0, coMeta_1.getCoMetaFormat)(meta);
+            const valueType = (0, coMeta_1.getCoMetaValueType)(meta);
+            if (format !== undefined)
+                this.coMetaFormats.set(key, format);
+            this.coMetaValueTypes.set(key, valueType);
+            await this.ensureCoMetaStates(baseId);
+            await this.setStateAsync(`${baseId}.metaFormat`, { val: format ?? null, ack: true });
+            await this.setStateAsync(`${baseId}.metaFormatText`, {
+                val: (0, coMeta_1.getCoMetaFormatText)(meta) ?? "Unknown",
+                ack: true,
+            });
+            await this.setStateAsync(`${baseId}.metaValueType`, { val: valueType, ack: true });
+            if (valueType !== "unknown") {
+                await this.extendObjectAsync(`${baseId}.value`, {
+                    type: "state",
+                    common: { type: valueType },
+                    native: {},
+                });
+            }
         }
-        await this.extendObjectAsync(baseId, {
-            type: "channel",
-            common: { name },
-            native: {},
-        });
+        if (name) {
+            await this.extendObjectAsync(baseId, {
+                type: "channel",
+                common: { name },
+                native: {},
+            });
+        }
+    }
+    async ensureCoMetaStates(baseId) {
+        const states = [
+            ["metaFormat", "number", "Gira format"],
+            ["metaFormatText", "string", "Gira format description"],
+            ["metaValueType", "string", "Gira value type"],
+        ];
+        for (const [suffix, type, name] of states) {
+            await this.extendObjectAsync(`${baseId}.${suffix}`, {
+                type: "state",
+                common: { name, type, role: "info", read: true, write: false },
+                native: {},
+            });
+        }
     }
     async fetchMeta(key, baseId) {
         if (!this.client)
@@ -1063,7 +1106,17 @@ class GiraEndpointAdapter extends utils.Adapter {
                     : await this.getStateAsync(src.stateId);
                 if (!state)
                     continue;
-                const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, src.bool, src.textEncoding);
+                if (state.val === null || state.val === undefined) {
+                    this.log.debug(`Skipping mapping source=updateOnStart stateId=${src.stateId} key=${src.key} because source value is null/undefined`);
+                    continue;
+                }
+                const metaValueType = this.coMetaValueTypes.get(src.key) ?? "unknown";
+                if (metaValueType === "string" && src.bool) {
+                    this.log.warn(`${src.key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+                }
+                const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, src.bool, src.textEncoding, metaValueType);
+                if (uidValue === undefined)
+                    continue;
                 this.logOutgoingCoValue({
                     source: "updateOnStart",
                     stateId: src.stateId,
@@ -1073,8 +1126,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                     uidValue,
                     bool: src.bool,
                     textEncoding: src.textEncoding,
+                    metaFormat: this.coMetaFormats.get(src.key),
+                    metaValueType,
                 });
-                this.client.call(src.key, method, uidValue);
+                this.client.call(src.key, method, this.getCoCallParams(uidValue, metaValueType));
                 const baseId = this.keyIdMap.get(src.key) ?? this.makeEndpointBaseId(src.key);
                 this.keyIdMap.set(src.key, baseId);
                 this.idKeyMap.set(baseId, src.key);
@@ -1153,7 +1208,17 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.log.debug(this.translate("Ignoring state change for %s because it was just updated from endpoint", id));
             return true;
         }
-        const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, mapped.bool, mapped.textEncoding);
+        if (state.val === null || state.val === undefined) {
+            this.log.debug(`Skipping mapping stateId=${id} key=${mapped.key} because source value is null/undefined`);
+            return true;
+        }
+        const metaValueType = this.coMetaValueTypes.get(mapped.key) ?? "unknown";
+        if (metaValueType === "string" && mapped.bool) {
+            this.log.warn(`${mapped.key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+        }
+        const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, mapped.bool, mapped.textEncoding, metaValueType);
+        if (uidValue === undefined)
+            return true;
         this.logOutgoingCoValue({
             source: "mapping",
             stateId: id,
@@ -1163,8 +1228,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             uidValue,
             bool: mapped.bool,
             textEncoding: mapped.textEncoding,
+            metaFormat: this.coMetaFormats.get(mapped.key),
+            metaValueType,
         });
-        this.client.call(mapped.key, method, uidValue);
+        this.client.call(mapped.key, method, this.getCoCallParams(uidValue, metaValueType));
         const baseId = this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
         this.keyIdMap.set(mapped.key, baseId);
         this.idKeyMap.set(baseId, mapped.key);
@@ -1478,7 +1545,17 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
         const boolKey = this.boolKeys.has(key);
         const textEncoding = this.keyTextEncodingMap.get(key) ?? "utf8";
-        const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, boolKey, textEncoding);
+        if (state.val === null || state.val === undefined) {
+            this.log.debug(`Skipping direct CO write key=${key} because source value is null/undefined`);
+            return true;
+        }
+        const metaValueType = this.coMetaValueTypes.get(key) ?? "unknown";
+        if (metaValueType === "string" && boolKey) {
+            this.log.warn(`${key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+        }
+        const { uidValue, ackVal, method } = (0, valueConversion_1.encodeUidValue)(state.val, boolKey, textEncoding, metaValueType);
+        if (uidValue === undefined)
+            return true;
         this.logOutgoingCoValue({
             source: "direct",
             stateId: id,
@@ -1488,8 +1565,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             uidValue,
             bool: boolKey,
             textEncoding,
+            metaFormat: this.coMetaFormats.get(key),
+            metaValueType,
         });
-        this.client.call(key, method, uidValue);
+        this.client.call(key, method, this.getCoCallParams(uidValue, metaValueType));
         const mappedForeign = this.reverseMap.get(key);
         if (mappedForeign) {
             let mappedVal = (0, valueConversion_1.decodeAckValue)(ackVal, mappedForeign.bool).value;

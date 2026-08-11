@@ -1,4 +1,13 @@
+import { CoMetaValueType } from "./coMeta";
+
 export type TextEncoding = "utf8" | "latin1";
+
+export interface EncodedUidValue {
+  uidValue: string | undefined;
+  ackVal: any;
+  method: "set" | "toggle";
+  encoding?: "base64";
+}
 
 export function normalizeTextEncoding(textEncoding: any): TextEncoding {
   return textEncoding === "latin1" ? "latin1" : "utf8";
@@ -7,9 +16,33 @@ export function normalizeTextEncoding(textEncoding: any): TextEncoding {
 export function encodeUidValue(
   val: any,
   boolMode: boolean,
-  textEncoding: TextEncoding = "utf8"
-): { uidValue: string; ackVal: any; method: "set" | "toggle" } {
+  textEncoding: TextEncoding = "utf8",
+  metaValueType: CoMetaValueType = "unknown"
+): EncodedUidValue {
   let method: "set" | "toggle" = "set";
+  if (val === null || val === undefined) {
+    return { uidValue: undefined, ackVal: val, method };
+  }
+
+  if (metaValueType === "string") {
+    const ackVal = String(val);
+    return {
+      uidValue: Buffer.from(ackVal, normalizeTextEncoding(textEncoding)).toString("base64"),
+      ackVal,
+      method,
+      encoding: "base64",
+    };
+  }
+
+  if (metaValueType === "boolean") {
+    const ackVal = typeof val === "string" ? val !== "0" && val !== "false" : Boolean(val);
+    return { uidValue: ackVal ? "1" : "0", ackVal, method };
+  }
+
+  if (metaValueType === "number") {
+    const ackVal = typeof val === "number" ? val : Number(val);
+    return { uidValue: String(ackVal), ackVal, method };
+  }
   let uidValue: any = val;
   let ackVal: any = val;
   if (boolMode) {
@@ -73,8 +106,22 @@ export function decodeAckValue(
 export function decodeCoValue(
   rawValue: any,
   boolMode: boolean,
-  textEncoding: TextEncoding = "utf8"
+  textEncoding: TextEncoding = "utf8",
+  metaValueType: CoMetaValueType = "unknown"
 ): { value: any; type: ioBroker.StateCommon["type"] } {
+  if (metaValueType === "string") {
+    return {
+      value: Buffer.from(String(rawValue ?? ""), "base64").toString(normalizeTextEncoding(textEncoding)),
+      type: "string",
+    };
+  }
+  if (metaValueType === "boolean") {
+    return decodeAckValue(rawValue, true);
+  }
+  if (metaValueType === "number") {
+    const value = Number(rawValue);
+    return Number.isNaN(value) ? decodeCoValue(rawValue, boolMode, textEncoding) : { value, type: "number" };
+  }
   if (boolMode || typeof rawValue !== "string") {
     return decodeAckValue(rawValue, boolMode);
   }

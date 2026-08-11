@@ -1,5 +1,6 @@
 const assert = require("assert").strict;
 const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion");
+const { GIRA_CO_FORMATS, getCoMetaFormatText, getCoMetaValueType } = require("../build/lib/coMeta");
 const { parseAdapterConfig, isCommunicationObjectKey } = require("../build/lib/configParser");
 const { normalizeArchiveQuery, isExecutableArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
 const { makeMinimalRequest, makeRequestKey, makeRequestKeys } = require("../build/lib/requestMatching");
@@ -301,6 +302,26 @@ assert.deepStrictEqual(decodeCoValue("123", false, "latin1"), {
   value: 123,
   type: "number",
 });
+
+assert.equal(GIRA_CO_FORMATS[1], "1 Bit");
+assert.equal(GIRA_CO_FORMATS[22], "14 Byte String");
+assert.equal(getCoMetaFormatText({ format: 14 }), "32 Bit unsigned / Sammelrückmeldeobjekt");
+assert.equal(getCoMetaValueType({ format: 1 }), "boolean");
+assert.equal(getCoMetaValueType({ format: 22 }), "string");
+assert.equal(getCoMetaValueType({ format: 14 }), "number");
+assert.equal(getCoMetaValueType({ format: 999 }), "unknown");
+assert.deepStrictEqual(encodeUidValue("Drying", false, "latin1", "string"), {
+  uidValue: "RHJ5aW5n", ackVal: "Drying", method: "set", encoding: "base64",
+});
+assert.deepStrictEqual(encodeUidValue("", false, "utf8", "string"), {
+  uidValue: "", ackVal: "", method: "set", encoding: "base64",
+});
+assert.equal(encodeUidValue(null, false, "utf8", "string").uidValue, undefined);
+assert.equal(encodeUidValue(undefined, false, "utf8", "string").uidValue, undefined);
+assert.equal(encodeUidValue(false, false, "utf8", "boolean").uidValue, "0");
+assert.equal(encodeUidValue(true, false, "utf8", "boolean").uidValue, "1");
+assert.equal(encodeUidValue("Drying", true, "utf8", "string").uidValue, "RHJ5aW5n");
+assert.equal(encodeUidValue(123, false, "utf8", "number").uidValue, "123");
 
 try {
   const path = require("path");
