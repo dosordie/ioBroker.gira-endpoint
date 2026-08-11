@@ -88,3 +88,28 @@ export function findNewMessageArchiveItems(beforeResponse: any, afterResponse: a
     return false;
   });
 }
+
+export function buildMessageArchiveWriteRequest(key: string, method: string, token: string): any {
+  return { type: "call", param: { key, method, token } };
+}
+
+export function messageArchiveWriteCreated(beforeResponse: any, afterResponse: any, token: string): boolean {
+  return findNewMessageArchiveItems(beforeResponse, afterResponse)
+    .some((item) => getMessageArchiveEntryKey(item) === token);
+}
+
+/** Returns the configured MA key when a response/event belongs to an MA subscription. */
+export function getMessageArchiveSubscriptionKey(payload: any, configuredKeys: string[]): string | undefined {
+  const configured = new Map(configuredKeys.map((key) => [key.toLowerCase(), key]));
+  const direct = payload?.subscription?.key ?? payload?.data?.key ?? payload?.data?.uid;
+  if (direct !== undefined) {
+    const match = configured.get(String(direct).toLowerCase());
+    if (match) return match;
+  }
+  const requestKeys = payload?.request?.param?.keys ?? payload?.request?.keys;
+  if (Array.isArray(requestKeys)) {
+    const matches = requestKeys.map((key: any) => configured.get(String(key).toLowerCase())).filter(Boolean);
+    if (matches.length === requestKeys.length && matches.length > 0) return matches[0];
+  }
+  return undefined;
+}

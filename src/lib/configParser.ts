@@ -86,7 +86,6 @@ export type AdapterConfigLike = {
     name?: string;
     count?: number;
     testToken?: string;
-    testText?: string;
     experimentalWrite?: boolean;
     enabled?: boolean;
   }[];
@@ -131,7 +130,6 @@ export type MessageArchiveConfig = {
   name: string;
   count: number;
   testToken?: string;
-  testText: string;
   experimentalWrite: boolean;
 };
 
@@ -424,7 +422,6 @@ export function parseAdapterConfig(
       name: String(archive.name ?? "").trim() || `MA@${suffix}`,
       count,
       testToken: String(archive.testToken ?? "").trim() || undefined,
-      testText: String(archive.testText ?? "ioBroker Test").trim() || "ioBroker Test",
       experimentalWrite: archive.experimentalWrite === true,
     });
   }

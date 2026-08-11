@@ -444,13 +444,19 @@ class GiraEndpointAdapter extends utils.Adapter {
             const validArchiveBases = new Set(this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`));
             const validMessageArchiveBases = new Set(this.messageArchives.map((archive) => `MA@.${this.sanitizeArchiveId(archive.key)}`));
             const objs = await this.getAdapterObjectsAsync();
+            const legacyMaCoBases = new Set();
+            for (const archive of this.messageArchives) {
+                legacyMaCoBases.add(this.makeEndpointBaseId(this.normalizeKey(archive.key)));
+                if (archive.testToken)
+                    legacyMaCoBases.add(this.makeEndpointBaseId(this.normalizeKey(archive.testToken)));
+            }
             for (const fullId of Object.keys(objs)) {
                 const id = fullId.startsWith(this.namespace + ".")
                     ? fullId.slice(this.namespace.length + 1)
                     : fullId;
                 if (id.startsWith("CO@.")) {
                     const base = id.split(".").slice(0, 2).join(".");
-                    if (!validBaseIds.has(base)) {
+                    if (legacyMaCoBases.has(base) && !validBaseIds.has(base)) {
                         const msg = this.translate("Deleting stale endpoint state %s", id);
                         this.log.info(msg);
                         this.notifyAdmin(msg);
@@ -614,8 +620,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                 const data = payload?.data;
                 if (!data)
                     return;
-                const subscriptionKey = String(payload?.subscription?.key ?? data?.key ?? data?.uid ?? "");
-                if (/^MA@/i.test(subscriptionKey)) {
+                const subscriptionKey = (0, messageArchive_1.getMessageArchiveSubscriptionKey)(payload, this.messageArchives.map((archive) => archive.key));
+                if (subscriptionKey) {
                     const archive = this.messageArchiveConfigMap.get(subscriptionKey) ??
                         this.messageArchives.find((candidate) => candidate.key.toLowerCase() === subscriptionKey.toLowerCase());
                     if (archive) {
@@ -1188,6 +1194,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
         const meta = await this.client.call(archive.key, "meta", undefined, this.makeTag("ma_meta"));
         const tokens = (0, messageArchive_1.extractMessageArchiveTokens)(meta?.data);
+        await this.cleanupLegacyMessageArchiveCoObjects(archive, tokens);
         await this.setStateAsync(`${baseId}.meta`, { val: JSON.stringify(meta?.data), ack: true });
         await this.setStateAsync(`${baseId}.tokens`, { val: JSON.stringify(tokens), ack: true });
         const metaData = meta?.data;
@@ -1222,6 +1229,19 @@ class GiraEndpointAdapter extends utils.Adapter {
             await this.setStateAsync(`${baseId}.lastMessage.time`, { val: new Date(timestamp * 1000).toLocaleString(), ack: true });
         }
     }
+    async cleanupLegacyMessageArchiveCoObjects(archive, tokens) {
+        const legitimate = new Set(this.endpointKeys.map((key) => this.makeEndpointBaseId(key)));
+        const candidates = new Set([archive.key, archive.testToken, ...tokens].filter((value) => Boolean(value)));
+        for (const candidate of candidates) {
+            const baseId = this.makeEndpointBaseId(this.normalizeKey(candidate));
+            if (legitimate.has(baseId))
+                continue;
+            if (!(await this.getObjectAsync(baseId)))
+                continue;
+            this.log.info(`Deleting legacy message-archive CO object ${baseId}`);
+            await this.delObjectAsync(baseId, { recursive: true });
+        }
+    }
     async runExperimentalMessageArchiveWrite(archive) {
         const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
         if (this.messageArchiveWriteRunning.has(archive.key))
@@ -1241,22 +1261,24 @@ class GiraEndpointAdapter extends utils.Adapter {
             for (const method of messageArchive_1.EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS) {
                 // Deliberately keep every probe minimal. More parameter variants would
                 // multiply side effects without adding a safe, documented guarantee.
-                const request = { type: "call", param: { key: archive.key, method, token: archive.testToken } };
+                const request = (0, messageArchive_1.buildMessageArchiveWriteRequest)(archive.key, method, archive.testToken);
                 const attempt = { method, request };
                 try {
                     const response = await this.client.call(archive.key, method, { token: archive.testToken }, this.makeTag(`ma_${method}`));
                     attempt.statusCode = response?.code;
+                    attempt.statusText = (0, GiraClient_1.codeToMessage)(Number(response?.code));
                     attempt.response = response;
                 }
                 catch (err) {
                     attempt.statusCode = err?.code;
+                    attempt.statusText = (0, GiraClient_1.codeToMessage)(Number(err?.code));
                     attempt.response = err?.response ?? { error: err?.message || String(err) };
                 }
                 this.log.info(`MA experimental write key=${archive.key} method=${method} response=${JSON.stringify(attempt.response)}`);
                 const after = await this.client.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_verify"));
                 attempt.verificationResponse = after;
                 attempt.newItems = (0, messageArchive_1.findNewMessageArchiveItems)(before, after);
-                attempt.created = attempt.newItems.some((item) => (0, messageArchive_1.getMessageArchiveEntryKey)(item) === archive.testToken);
+                attempt.created = (0, messageArchive_1.messageArchiveWriteCreated)(before, after, archive.testToken);
                 report.experimentalWrite.push(attempt);
                 await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify((0, messageArchive_1.getMessageArchiveItems)(after)), ack: true });
                 await this.updateLastMessageArchiveStates(baseId, (0, messageArchive_1.getMessageArchiveItems)(after));

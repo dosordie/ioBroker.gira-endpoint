@@ -15,14 +15,14 @@ const BACKOFF_FACTOR = 1.7;
 const BACKOFF_JITTER = 0.2;
 const STATUS_CODE_MESSAGES = {
     0: "Ok",
-    400: "Ungültige Anfrage (Forbidden).",
-    403: "Zugriff verweigert (Bad Request).",
-    404: "Das angefragte HS-Objekt existiert in dem aufgerufenen Kontext nicht.",
-    500: "Beim Erzeugen der Antwort ist im Server ein Fehler aufgetreten.",
-    901: "Der angegebene Schlüssel ist ungültig.",
+    400: "Ungültige Anfrage",
+    403: "Zugriff verweigert",
+    404: "Objekt existiert in diesem Kontext nicht",
+    500: "Serverfehler",
+    901: "Ungültiger Schlüssel",
     902: "reserviert",
-    903: "Die Objekt-Parameter sind ungültig.",
-    904: "Das Objekt ist nicht abonniert.",
+    903: "Objekt-Parameter ungültig",
+    904: "Objekt nicht abonniert",
 };
 function codeToMessage(code) {
     return STATUS_CODE_MESSAGES[code] || `Error code ${code}`;
@@ -157,6 +157,7 @@ class GiraClient extends events_1.EventEmitter {
                     const err = new Error(formatCallError(payload, fallbackRequest));
                     err.code = payload.code;
                     err.response = payload;
+                    let handled = false;
                     if (tag && this.tagResolvers.has(tag)) {
                         const resolver = this.tagResolvers.get(tag);
                         if (resolver?.timer)
@@ -164,6 +165,7 @@ class GiraClient extends events_1.EventEmitter {
                         resolver?.reject(err);
                         this.tagResolvers.delete(tag);
                         this.clearRequestTag(tag, ...(0, requestMatching_1.makeRequestKeys)(payload?.request));
+                        handled = true;
                     }
                     else if (payload?.request) {
                         const { tag: t, requestKeys } = this.findRequestTag(payload.request);
@@ -174,9 +176,13 @@ class GiraClient extends events_1.EventEmitter {
                             resolver?.reject(err);
                             this.tagResolvers.delete(t);
                             this.clearRequestTag(t, ...requestKeys);
+                            handled = true;
                         }
                     }
-                    this.emit("error", err);
+                    // Tagged calls deliberately surface endpoint errors through their
+                    // promise. Only unmatched failures are global client errors.
+                    if (!handled)
+                        this.emit("error", err);
                     return;
                 }
                 this.normalizeData(payload?.data);
