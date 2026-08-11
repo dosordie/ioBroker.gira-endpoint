@@ -1,9 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isCommunicationObjectKey = isCommunicationObjectKey;
 exports.parseEndpointAndMappingConfig = parseEndpointAndMappingConfig;
 exports.parseAdapterConfig = parseAdapterConfig;
 const valueConversion_1 = require("./valueConversion");
 const archiveQuery_1 = require("./archiveQuery");
+const NON_CO_GIRA_PREFIX = /^(?:MA|DA|CA|SC|SQ|TI|VC|CP)@/i;
+/**
+ * A prefixed Gira object cannot be configured as a communication object. Bare
+ * names remain valid because they may intentionally refer to real COs.
+ */
+function isCommunicationObjectKey(rawKey) {
+    const key = String(rawKey ?? "").trim();
+    return Boolean(key) && !NON_CO_GIRA_PREFIX.test(key);
+}
 function rememberKeyCase(keyCaseMap, normalized, original) {
     if (!normalized)
         return;
@@ -39,6 +49,8 @@ function parseEndpointAndMappingConfig(cfg, helpers) {
                 if (k.enabled === false)
                     continue;
                 const rawKey = String(k.key ?? "").trim();
+                if (!isCommunicationObjectKey(rawKey))
+                    continue;
                 const key = helpers.normalizeKey(rawKey);
                 if (!key)
                     continue;
@@ -68,6 +80,8 @@ function parseEndpointAndMappingConfig(cfg, helpers) {
             }
             else {
                 const rawKey = String(k).trim();
+                if (!isCommunicationObjectKey(rawKey))
+                    continue;
                 const key = helpers.normalizeKey(rawKey);
                 if (!key)
                     continue;
@@ -82,6 +96,8 @@ function parseEndpointAndMappingConfig(cfg, helpers) {
             .map((k) => k.trim())
             .filter((k) => k);
         for (const rawKey of arr) {
+            if (!isCommunicationObjectKey(rawKey))
+                continue;
             const key = helpers.normalizeKey(rawKey);
             if (!key)
                 continue;
@@ -109,6 +125,8 @@ function parseEndpointAndMappingConfig(cfg, helpers) {
                 continue;
             const stateId = String(m.stateId ?? "").trim();
             const rawKey = String(m.key ?? "").trim();
+            if (!isCommunicationObjectKey(rawKey))
+                continue;
             const key = helpers.normalizeKey(rawKey);
             if (!stateId || !key)
                 continue;

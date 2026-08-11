@@ -62,6 +62,25 @@ export function getLatestMessageArchiveItem(items: any[]): any | undefined {
   }, undefined);
 }
 
+export function getLastMessageArchiveState(items: any[]): {
+  key?: string;
+  text?: string;
+  ts?: number;
+  time?: string;
+} | undefined {
+  const item = getLatestMessageArchiveItem(items);
+  if (!item) return undefined;
+  const key = getMessageArchiveEntryKey(item);
+  const timestamp = Number(item.ts);
+  return {
+    ...(key !== undefined ? { key } : {}),
+    ...(item.text !== undefined && item.text !== null ? { text: String(item.text) } : {}),
+    ...(Number.isFinite(timestamp)
+      ? { ts: timestamp, time: new Date(timestamp * 1000).toLocaleString() }
+      : {}),
+  };
+}
+
 export function getMessageArchiveEventItems(payload: any): any[] {
   const items = getMessageArchiveItems(payload);
   if (items.length) return items;
@@ -112,4 +131,20 @@ export function getMessageArchiveSubscriptionKey(payload: any, configuredKeys: s
     if (matches.length === requestKeys.length && matches.length > 0) return matches[0];
   }
   return undefined;
+}
+
+/** Builds the single, de-duplicated key list used for a connection cycle. */
+export function buildSubscriptionKeys(endpointKeys: string[], messageArchiveKeys: string[]): string[] {
+  const result = new Map<string, string>();
+  for (const key of [...endpointKeys, ...messageArchiveKeys]) {
+    const trimmed = String(key ?? "").trim();
+    if (trimmed && !result.has(trimmed.toLowerCase())) result.set(trimmed.toLowerCase(), trimmed);
+  }
+  return Array.from(result.values());
+}
+
+export function isMessageArchiveKey(key: unknown, configuredKeys: string[]): boolean {
+  if (key === undefined || key === null) return false;
+  const candidate = String(key).toLowerCase();
+  return configuredKeys.some((configured) => configured.toLowerCase() === candidate);
 }

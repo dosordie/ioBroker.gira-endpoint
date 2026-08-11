@@ -6,12 +6,15 @@ exports.getMessageArchiveItems = getMessageArchiveItems;
 exports.sanitizeArchiveId = sanitizeArchiveId;
 exports.getMessageArchiveEntryKey = getMessageArchiveEntryKey;
 exports.getLatestMessageArchiveItem = getLatestMessageArchiveItem;
+exports.getLastMessageArchiveState = getLastMessageArchiveState;
 exports.getMessageArchiveEventItems = getMessageArchiveEventItems;
 exports.messageArchiveEntryFingerprint = messageArchiveEntryFingerprint;
 exports.findNewMessageArchiveItems = findNewMessageArchiveItems;
 exports.buildMessageArchiveWriteRequest = buildMessageArchiveWriteRequest;
 exports.messageArchiveWriteCreated = messageArchiveWriteCreated;
 exports.getMessageArchiveSubscriptionKey = getMessageArchiveSubscriptionKey;
+exports.buildSubscriptionKeys = buildSubscriptionKeys;
+exports.isMessageArchiveKey = isMessageArchiveKey;
 exports.EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS = [
     "add",
     "write",
@@ -81,6 +84,20 @@ function getLatestMessageArchiveItem(items) {
         return !latest || timestamp > Number(latest.ts) ? item : latest;
     }, undefined);
 }
+function getLastMessageArchiveState(items) {
+    const item = getLatestMessageArchiveItem(items);
+    if (!item)
+        return undefined;
+    const key = getMessageArchiveEntryKey(item);
+    const timestamp = Number(item.ts);
+    return {
+        ...(key !== undefined ? { key } : {}),
+        ...(item.text !== undefined && item.text !== null ? { text: String(item.text) } : {}),
+        ...(Number.isFinite(timestamp)
+            ? { ts: timestamp, time: new Date(timestamp * 1000).toLocaleString() }
+            : {}),
+    };
+}
 function getMessageArchiveEventItems(payload) {
     const items = getMessageArchiveItems(payload);
     if (items.length)
@@ -130,4 +147,20 @@ function getMessageArchiveSubscriptionKey(payload, configuredKeys) {
             return matches[0];
     }
     return undefined;
+}
+/** Builds the single, de-duplicated key list used for a connection cycle. */
+function buildSubscriptionKeys(endpointKeys, messageArchiveKeys) {
+    const result = new Map();
+    for (const key of [...endpointKeys, ...messageArchiveKeys]) {
+        const trimmed = String(key ?? "").trim();
+        if (trimmed && !result.has(trimmed.toLowerCase()))
+            result.set(trimmed.toLowerCase(), trimmed);
+    }
+    return Array.from(result.values());
+}
+function isMessageArchiveKey(key, configuredKeys) {
+    if (key === undefined || key === null)
+        return false;
+    const candidate = String(key).toLowerCase();
+    return configuredKeys.some((configured) => configured.toLowerCase() === candidate);
 }

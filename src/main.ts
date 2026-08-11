@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
 import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults, MessageArchiveConfig } from "./lib/configParser";
-import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, buildMessageArchiveWriteRequest, extractMessageArchiveTokens, findNewMessageArchiveItems, getLatestMessageArchiveItem, getMessageArchiveEntryKey, getMessageArchiveEventItems, getMessageArchiveItems, getMessageArchiveSubscriptionKey, messageArchiveWriteCreated, sanitizeArchiveId } from "./lib/messageArchive";
+import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, buildMessageArchiveWriteRequest, buildSubscriptionKeys, extractMessageArchiveTokens, findNewMessageArchiveItems, getLastMessageArchiveState, getMessageArchiveEntryKey, getMessageArchiveEventItems, getMessageArchiveItems, getMessageArchiveSubscriptionKey, isMessageArchiveKey, messageArchiveWriteCreated, sanitizeArchiveId } from "./lib/messageArchive";
 import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
 
 // Configuration options provided by ioBroker's admin interface
@@ -111,6 +111,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private initialSkipUpdate = new Set<string>();
   private updateOnStartSources: UpdateOnStartSource[] = [];
   private pendingSubscriptions = new Set<string>();
+  private warnedMissingSubscriptions = new Set<string>();
   private isConnected = false;
   private pendingHsRestart = false;
   private archiveKeys: string[] = [];
@@ -657,11 +658,16 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.setState("info.connection", true, true);
         this.fetchedMeta.clear();
         this.skipInitialUpdate = new Set(this.initialSkipUpdate);
-        if (this.endpointKeys.length) {
+        const subscriptionKeys = buildSubscriptionKeys(
+          this.endpointKeys,
+          this.messageArchives.map((archive) => archive.key)
+        );
+        this.warnedMissingSubscriptions.clear();
+        if (subscriptionKeys.length) {
           this.pendingSubscriptions = new Set(
             this.endpointKeys.map((k) => this.normalizeKey(k))
           );
-          this.client!.subscribe(this.endpointKeys);
+          this.client!.subscribe(subscriptionKeys);
         } else {
           this.log.info(
             this.translate("Subscribing to all endpoint events (no keys configured)")
@@ -670,7 +676,6 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.client!.subscribe([]);
         }
         if (this.messageArchives.length) {
-          this.client!.subscribe(this.messageArchives.map((archive) => archive.key));
           for (const archive of this.messageArchives) {
             void this.readMessageArchive(archive).catch((err: any) => {
               this.log.error(`MA read failed key=${archive.key}: ${err?.message || err}`);
@@ -840,13 +845,28 @@ class GiraEndpointAdapter extends utils.Adapter {
         const entries: Array<{ key: string; data: any; code?: number }> = [];
 
         // Case 1: subscription result lists multiple items
-        if (typeof data === "object" && Array.isArray((data as any).items)) {
+        if (payload.type === "subscribe" && typeof data === "object" && Array.isArray((data as any).items)) {
           const received = new Set<string>();
           for (const item of (data as any).items) {
             if (!item) continue;
             const key =
               item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
             if (key === undefined) continue;
+            const messageArchiveKeys = this.messageArchives.map((archive) => archive.key);
+            if (isMessageArchiveKey(key, messageArchiveKeys)) {
+              const archive = this.messageArchives.find(
+                (candidate) => candidate.key.toLowerCase() === String(key).toLowerCase()
+              );
+              if (archive) {
+                const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+                const items = getMessageArchiveEventItems(item.data ?? item);
+                if (items.length) {
+                  await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+                  await this.updateLastMessageArchiveStates(baseId, items);
+                }
+              }
+              continue;
+            }
             const normalized = this.normalizeKey(key);
             received.add(normalized);
             const success =
@@ -919,9 +939,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                 native: {},
               });
               await this.setStateAsync(subId, { val: false, ack: true });
-              const msg = this.translate("No subscription response for %s", key);
-              this.log.warn(msg);
-              this.notifyAdmin(msg);
+              if (!this.warnedMissingSubscriptions.has(key)) {
+                this.warnedMissingSubscriptions.add(key);
+                const msg = this.translate("No subscription response for %s", key);
+                this.log.warn(msg);
+                this.notifyAdmin(msg);
+              }
             }
           }
           for (const key of pending) this.pendingSubscriptions.delete(key);
@@ -1441,16 +1464,12 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private async updateLastMessageArchiveStates(baseId: string, items: any[]): Promise<void> {
-    const item = getLatestMessageArchiveItem(items);
-    if (!item) return;
-    const key = getMessageArchiveEntryKey(item);
-    const timestamp = Number(item.ts);
-    if (key !== undefined) await this.setStateAsync(`${baseId}.lastMessage.key`, { val: key, ack: true });
-    if (item.text !== undefined && item.text !== null) await this.setStateAsync(`${baseId}.lastMessage.text`, { val: String(item.text), ack: true });
-    if (Number.isFinite(timestamp)) {
-      await this.setStateAsync(`${baseId}.lastMessage.ts`, { val: timestamp, ack: true });
-      await this.setStateAsync(`${baseId}.lastMessage.time`, { val: new Date(timestamp * 1000).toLocaleString(), ack: true });
-    }
+    const state = getLastMessageArchiveState(items);
+    if (!state) return;
+    if (state.key !== undefined) await this.setStateAsync(`${baseId}.lastMessage.key`, { val: state.key, ack: true });
+    if (state.text !== undefined) await this.setStateAsync(`${baseId}.lastMessage.text`, { val: state.text, ack: true });
+    if (state.ts !== undefined) await this.setStateAsync(`${baseId}.lastMessage.ts`, { val: state.ts, ack: true });
+    if (state.time !== undefined) await this.setStateAsync(`${baseId}.lastMessage.time`, { val: state.time, ack: true });
   }
 
   private async cleanupLegacyMessageArchiveCoObjects(archive: MessageArchiveConfig, tokens: string[]): Promise<void> {
@@ -1458,7 +1477,15 @@ class GiraEndpointAdapter extends utils.Adapter {
     const candidates = new Set([archive.key, archive.testToken, ...tokens].filter((value): value is string => Boolean(value)));
     for (const candidate of candidates) {
       const baseId = this.makeEndpointBaseId(this.normalizeKey(candidate));
-      if (legitimate.has(baseId)) continue;
+      if (legitimate.has(baseId)) {
+        if (tokens.includes(candidate)) {
+          this.log.warn(
+            `Configured endpoint "${candidate}" matches a token of message archive ${archive.key}. ` +
+            "Keeping it because it may be a real CO."
+          );
+        }
+        continue;
+      }
       if (!(await this.getObjectAsync(baseId))) continue;
       this.log.info(`Deleting legacy message-archive CO object ${baseId}`);
       await this.delObjectAsync(baseId, { recursive: true });

@@ -84,6 +84,7 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.initialSkipUpdate = new Set();
         this.updateOnStartSources = [];
         this.pendingSubscriptions = new Set();
+        this.warnedMissingSubscriptions = new Set();
         this.isConnected = false;
         this.pendingHsRestart = false;
         this.archiveKeys = [];
@@ -534,9 +535,11 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.setState("info.connection", true, true);
                 this.fetchedMeta.clear();
                 this.skipInitialUpdate = new Set(this.initialSkipUpdate);
-                if (this.endpointKeys.length) {
+                const subscriptionKeys = (0, messageArchive_1.buildSubscriptionKeys)(this.endpointKeys, this.messageArchives.map((archive) => archive.key));
+                this.warnedMissingSubscriptions.clear();
+                if (subscriptionKeys.length) {
                     this.pendingSubscriptions = new Set(this.endpointKeys.map((k) => this.normalizeKey(k)));
-                    this.client.subscribe(this.endpointKeys);
+                    this.client.subscribe(subscriptionKeys);
                 }
                 else {
                     this.log.info(this.translate("Subscribing to all endpoint events (no keys configured)"));
@@ -544,7 +547,6 @@ class GiraEndpointAdapter extends utils.Adapter {
                     this.client.subscribe([]);
                 }
                 if (this.messageArchives.length) {
-                    this.client.subscribe(this.messageArchives.map((archive) => archive.key));
                     for (const archive of this.messageArchives) {
                         void this.readMessageArchive(archive).catch((err) => {
                             this.log.error(`MA read failed key=${archive.key}: ${err?.message || err}`);
@@ -692,7 +694,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }
                 const entries = [];
                 // Case 1: subscription result lists multiple items
-                if (typeof data === "object" && Array.isArray(data.items)) {
+                if (payload.type === "subscribe" && typeof data === "object" && Array.isArray(data.items)) {
                     const received = new Set();
                     for (const item of data.items) {
                         if (!item)
@@ -700,6 +702,19 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const key = item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
                         if (key === undefined)
                             continue;
+                        const messageArchiveKeys = this.messageArchives.map((archive) => archive.key);
+                        if ((0, messageArchive_1.isMessageArchiveKey)(key, messageArchiveKeys)) {
+                            const archive = this.messageArchives.find((candidate) => candidate.key.toLowerCase() === String(key).toLowerCase());
+                            if (archive) {
+                                const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+                                const items = (0, messageArchive_1.getMessageArchiveEventItems)(item.data ?? item);
+                                if (items.length) {
+                                    await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+                                    await this.updateLastMessageArchiveStates(baseId, items);
+                                }
+                            }
+                            continue;
+                        }
                         const normalized = this.normalizeKey(key);
                         received.add(normalized);
                         const success = item.code !== undefined ? item.code === 0 : !("error" in item);
@@ -765,9 +780,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                                 native: {},
                             });
                             await this.setStateAsync(subId, { val: false, ack: true });
-                            const msg = this.translate("No subscription response for %s", key);
-                            this.log.warn(msg);
-                            this.notifyAdmin(msg);
+                            if (!this.warnedMissingSubscriptions.has(key)) {
+                                this.warnedMissingSubscriptions.add(key);
+                                const msg = this.translate("No subscription response for %s", key);
+                                this.log.warn(msg);
+                                this.notifyAdmin(msg);
+                            }
                         }
                     }
                     for (const key of pending)
@@ -1215,27 +1233,30 @@ class GiraEndpointAdapter extends utils.Adapter {
         return { meta, get, tokens };
     }
     async updateLastMessageArchiveStates(baseId, items) {
-        const item = (0, messageArchive_1.getLatestMessageArchiveItem)(items);
-        if (!item)
+        const state = (0, messageArchive_1.getLastMessageArchiveState)(items);
+        if (!state)
             return;
-        const key = (0, messageArchive_1.getMessageArchiveEntryKey)(item);
-        const timestamp = Number(item.ts);
-        if (key !== undefined)
-            await this.setStateAsync(`${baseId}.lastMessage.key`, { val: key, ack: true });
-        if (item.text !== undefined && item.text !== null)
-            await this.setStateAsync(`${baseId}.lastMessage.text`, { val: String(item.text), ack: true });
-        if (Number.isFinite(timestamp)) {
-            await this.setStateAsync(`${baseId}.lastMessage.ts`, { val: timestamp, ack: true });
-            await this.setStateAsync(`${baseId}.lastMessage.time`, { val: new Date(timestamp * 1000).toLocaleString(), ack: true });
-        }
+        if (state.key !== undefined)
+            await this.setStateAsync(`${baseId}.lastMessage.key`, { val: state.key, ack: true });
+        if (state.text !== undefined)
+            await this.setStateAsync(`${baseId}.lastMessage.text`, { val: state.text, ack: true });
+        if (state.ts !== undefined)
+            await this.setStateAsync(`${baseId}.lastMessage.ts`, { val: state.ts, ack: true });
+        if (state.time !== undefined)
+            await this.setStateAsync(`${baseId}.lastMessage.time`, { val: state.time, ack: true });
     }
     async cleanupLegacyMessageArchiveCoObjects(archive, tokens) {
         const legitimate = new Set(this.endpointKeys.map((key) => this.makeEndpointBaseId(key)));
         const candidates = new Set([archive.key, archive.testToken, ...tokens].filter((value) => Boolean(value)));
         for (const candidate of candidates) {
             const baseId = this.makeEndpointBaseId(this.normalizeKey(candidate));
-            if (legitimate.has(baseId))
+            if (legitimate.has(baseId)) {
+                if (tokens.includes(candidate)) {
+                    this.log.warn(`Configured endpoint "${candidate}" matches a token of message archive ${archive.key}. ` +
+                        "Keeping it because it may be a real CO.");
+                }
                 continue;
+            }
             if (!(await this.getObjectAsync(baseId)))
                 continue;
             this.log.info(`Deleting legacy message-archive CO object ${baseId}`);
