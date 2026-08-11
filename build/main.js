@@ -39,6 +39,7 @@ const crypto_1 = require("crypto");
 const util_1 = require("util");
 const valueConversion_1 = require("./lib/valueConversion");
 const coMeta_1 = require("./lib/coMeta");
+const coMetaQueue_1 = require("./lib/coMetaQueue");
 const configParser_1 = require("./lib/configParser");
 const messageArchive_1 = require("./lib/messageArchive");
 const archiveQuery_1 = require("./lib/archiveQuery");
@@ -540,7 +541,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.log.info(this.translate("Connected to %s", url));
                 this.isConnected = true;
                 this.setState("info.connection", true, true);
-                this.fetchedMeta.clear();
+                // Give each connection its own successful-request cache. An older request
+                // finishing during reconnect must not mark metadata for the new session.
+                this.fetchedMeta = new Set();
+                this.metaQueue = new coMetaQueue_1.CoMetaRequestQueue(async (key) => this.fetchMeta(key, this.keyIdMap.get(key) ?? this.makeEndpointBaseId(key)), this.fetchedMeta, coMetaQueue_1.CO_META_MAX_CONCURRENCY);
                 this.skipInitialUpdate = new Set(this.initialSkipUpdate);
                 const subscriptionKeys = (0, messageArchive_1.buildSubscriptionKeys)(this.endpointKeys, this.messageArchives.map((archive) => archive.key));
                 this.warnedMissingSubscriptions.clear();
@@ -700,8 +704,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                     return;
                 }
                 const entries = [];
+                let configuredSubscriptionCompleted = false;
                 // Case 1: subscription result lists multiple items
                 if (payload.type === "subscribe" && typeof data === "object" && Array.isArray(data.items)) {
+                    configuredSubscriptionCompleted = true;
                     const received = new Set();
                     for (const item of data.items) {
                         if (!item)
@@ -915,10 +921,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                     });
                     this.subscribeStates(`${baseId}.value`);
                     this.subscribeStates(`${baseId}.meta`);
-                    if (!this.fetchedMeta.has(normalized)) {
-                        this.fetchedMeta.add(normalized);
-                        this.fetchMeta(normalized, baseId);
-                    }
+                    void this.metaQueue?.enqueue(normalized);
                     const message = (0, GiraClient_1.codeToMessage)(code ?? payload.code ?? 0);
                     const statusText = typeof this.translate === "function"
                         ? this.translate(message)
@@ -977,6 +980,9 @@ class GiraEndpointAdapter extends utils.Adapter {
                             }
                         }
                     }
+                }
+                if (configuredSubscriptionCompleted) {
+                    void this.metaQueue?.enqueueAll(this.endpointKeys);
                 }
             });
             this.client.connect();
@@ -1039,7 +1045,6 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.coMetaFormats.set(key, format);
             this.coMetaValueTypes.set(key, valueType);
             await this.ensureCoMetaStates(baseId);
-            await this.setStateAsync(`${baseId}.metaFormat`, { val: format ?? null, ack: true });
             await this.setStateAsync(`${baseId}.metaFormatText`, {
                 val: (0, coMeta_1.getCoMetaFormatText)(meta) ?? "Unknown",
                 ack: true,
@@ -1062,22 +1067,19 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
     }
     async ensureCoMetaStates(baseId) {
-        const states = [
-            ["metaFormat", "number", "Gira format"],
-            ["metaFormatText", "string", "Gira format description"],
-            ["metaValueType", "string", "Gira value type"],
-        ];
-        for (const [suffix, type, name] of states) {
+        // Remove the state created by older adapter versions; the numeric format remains in raw meta.
+        await this.delObjectAsync(`${baseId}.metaFormat`).catch(() => undefined);
+        for (const [suffix, type, name] of coMeta_1.CO_META_STATE_DEFINITIONS) {
             await this.extendObjectAsync(`${baseId}.${suffix}`, {
                 type: "state",
-                common: { name, type, role: "info", read: true, write: false },
+                common: { name, type: type, role: "info", read: true, write: false },
                 native: {},
             });
         }
     }
     async fetchMeta(key, baseId) {
         if (!this.client)
-            return;
+            return false;
         try {
             const metaResp = await this.client.call(key, "meta", undefined, this.makeTag("meta"));
             if (metaResp?.data !== undefined) {
@@ -1086,11 +1088,13 @@ class GiraEndpointAdapter extends utils.Adapter {
                     val: JSON.stringify(metaResp.data),
                     ack: true,
                 });
+                return true;
             }
         }
         catch (err) {
             this.log.error(this.translate("Meta call failed for %s: %s", key, err?.message || err));
         }
+        return false;
     }
     async triggerUpdateOnStart() {
         if (!this.client || !this.isConnected) {

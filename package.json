@@ -13,7 +13,7 @@
     "build": "tsc -p .",
     "watch": "tsc -w -p .",
     "start": "node build/main.js",
-    "test": "node test/main.test.js"
+    "test": "node test/main.test.js && node test/metaQueue.test.js"
   },
   "engines": {
     "node": ">=18"
