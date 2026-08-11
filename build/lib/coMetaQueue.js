@@ -4,10 +4,11 @@ exports.CoMetaRequestQueue = exports.CO_META_MAX_CONCURRENCY = void 0;
 exports.CO_META_MAX_CONCURRENCY = 4;
 /** A small dependency-free queue which de-duplicates active and successful requests. */
 class CoMetaRequestQueue {
-    constructor(request, fetched, maxConcurrency = exports.CO_META_MAX_CONCURRENCY) {
+    constructor(request, fetched, maxConcurrency = exports.CO_META_MAX_CONCURRENCY, excluded = new Set()) {
         this.request = request;
         this.fetched = fetched;
         this.maxConcurrency = maxConcurrency;
+        this.excluded = excluded;
         this.pending = [];
         this.activeKeys = new Set();
         this.activeCount = 0;
@@ -16,6 +17,8 @@ class CoMetaRequestQueue {
         }
     }
     enqueue(key) {
+        if (this.excluded.has(key))
+            return Promise.resolve(false);
         if (this.fetched.has(key))
             return Promise.resolve(true);
         if (this.activeKeys.has(key) || this.pending.some((item) => item.key === key)) {

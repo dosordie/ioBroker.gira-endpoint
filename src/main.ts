@@ -123,6 +123,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveDescMap = new Map<string, string>();
   private archiveQueryDefaults = new Map<string, ArchiveQueryDefaults>();
   private fetchedMeta = new Set<string>();
+  private failedSubscriptionMeta = new Set<string>();
   private readonly metaWarnings = new MetaWarningDeduplicator();
   private metaQueue?: CoMetaRequestQueue;
   private coMetaFormats = new Map<string, number>();
@@ -670,13 +671,15 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.log.info(this.translate("Connected to %s", url));
         this.isConnected = true;
         this.setState("info.connection", true, true);
-        // Give each connection its own successful-request cache. An older request
-        // finishing during reconnect must not mark metadata for the new session.
+        // Give each connection its own metadata and subscription-result caches.
+        // An older request finishing during reconnect must not affect the new session.
         this.fetchedMeta = new Set<string>();
+        this.failedSubscriptionMeta = new Set<string>();
         this.metaQueue = new CoMetaRequestQueue(
           async (key) => this.fetchMeta(key, this.keyIdMap.get(key) ?? this.makeEndpointBaseId(key)),
           this.fetchedMeta,
-          CO_META_MAX_CONCURRENCY
+          CO_META_MAX_CONCURRENCY,
+          this.failedSubscriptionMeta
         );
         this.skipInitialUpdate = new Set(this.initialSkipUpdate);
         const subscriptionKeys = buildSubscriptionKeys(
@@ -894,6 +897,12 @@ class GiraEndpointAdapter extends utils.Adapter {
             received.add(normalized);
             const success =
               item.code !== undefined ? item.code === 0 : !("error" in item);
+            if (success) {
+              this.failedSubscriptionMeta.delete(normalized);
+            } else {
+              this.failedSubscriptionMeta.add(normalized);
+              this.fetchedMeta.delete(normalized);
+            }
             this.rememberKeyCase(normalized, String(key));
             const baseId =
               this.keyIdMap.get(normalized) ?? this.makeEndpointBaseId(normalized);
@@ -1065,6 +1074,12 @@ class GiraEndpointAdapter extends utils.Adapter {
             native: {},
           });
           const success = code === undefined || code === 0;
+          if (success) {
+            this.failedSubscriptionMeta.delete(normalized);
+          } else {
+            this.failedSubscriptionMeta.add(normalized);
+            this.fetchedMeta.delete(normalized);
+          }
           await this.setStateAsync(subId, { val: success, ack: true });
           if (!success) {
             let msg = this.translate(
