@@ -3,7 +3,8 @@ import { GiraClient, codeToMessage } from "./lib/GiraClient";
 import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
-import { CoMetaValueType, getCoMetaFormat, getCoMetaFormatText, getCoMetaValueType } from "./lib/coMeta";
+import { CO_META_STATE_DEFINITIONS, CoMetaValueType, getCoMetaFormat, getCoMetaFormatText, getCoMetaValueType } from "./lib/coMeta";
+import { CO_META_MAX_CONCURRENCY, CoMetaRequestQueue } from "./lib/coMetaQueue";
 import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults, MessageArchiveConfig } from "./lib/configParser";
 import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, buildMessageArchiveWriteRequest, buildSubscriptionKeys, extractMessageArchiveTokens, findNewMessageArchiveItems, getLastMessageArchiveState, getMessageArchiveEntryKey, getMessageArchiveEventItems, getMessageArchiveItems, getMessageArchiveSubscriptionKey, isMessageArchiveKey, messageArchiveWriteCreated, sanitizeArchiveId } from "./lib/messageArchive";
 import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
@@ -121,6 +122,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveDescMap = new Map<string, string>();
   private archiveQueryDefaults = new Map<string, ArchiveQueryDefaults>();
   private fetchedMeta = new Set<string>();
+  private metaQueue?: CoMetaRequestQueue;
   private coMetaFormats = new Map<string, number>();
   private coMetaValueTypes = new Map<string, CoMetaValueType>();
   private messageArchives: MessageArchiveConfig[] = [];
@@ -666,7 +668,14 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.log.info(this.translate("Connected to %s", url));
         this.isConnected = true;
         this.setState("info.connection", true, true);
-        this.fetchedMeta.clear();
+        // Give each connection its own successful-request cache. An older request
+        // finishing during reconnect must not mark metadata for the new session.
+        this.fetchedMeta = new Set<string>();
+        this.metaQueue = new CoMetaRequestQueue(
+          async (key) => this.fetchMeta(key, this.keyIdMap.get(key) ?? this.makeEndpointBaseId(key)),
+          this.fetchedMeta,
+          CO_META_MAX_CONCURRENCY
+        );
         this.skipInitialUpdate = new Set(this.initialSkipUpdate);
         const subscriptionKeys = buildSubscriptionKeys(
           this.endpointKeys,
@@ -853,9 +862,11 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
 
         const entries: Array<{ key: string; data: any; code?: number }> = [];
+        let configuredSubscriptionCompleted = false;
 
         // Case 1: subscription result lists multiple items
         if (payload.type === "subscribe" && typeof data === "object" && Array.isArray((data as any).items)) {
+          configuredSubscriptionCompleted = true;
           const received = new Set<string>();
           for (const item of (data as any).items) {
             if (!item) continue;
@@ -1094,10 +1105,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.subscribeStates(`${baseId}.value`);
           this.subscribeStates(`${baseId}.meta`);
 
-          if (!this.fetchedMeta.has(normalized)) {
-            this.fetchedMeta.add(normalized);
-            this.fetchMeta(normalized, baseId);
-          }
+          void this.metaQueue?.enqueue(normalized);
 
           const message = codeToMessage(code ?? payload.code ?? 0);
           const statusText =
@@ -1166,6 +1174,9 @@ class GiraEndpointAdapter extends utils.Adapter {
               }
             }
           }
+        }
+        if (configuredSubscriptionCompleted) {
+          void this.metaQueue?.enqueueAll(this.endpointKeys);
         }
       });
 
@@ -1238,7 +1249,6 @@ class GiraEndpointAdapter extends utils.Adapter {
       if (format !== undefined) this.coMetaFormats.set(key, format);
       this.coMetaValueTypes.set(key, valueType);
       await this.ensureCoMetaStates(baseId);
-      await this.setStateAsync(`${baseId}.metaFormat`, { val: format ?? null, ack: true });
       await this.setStateAsync(`${baseId}.metaFormatText`, {
         val: getCoMetaFormatText(meta) ?? "Unknown",
         ack: true,
@@ -1262,22 +1272,19 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private async ensureCoMetaStates(baseId: string): Promise<void> {
-    const states: Array<[string, ioBroker.StateCommon["type"], string]> = [
-      ["metaFormat", "number", "Gira format"],
-      ["metaFormatText", "string", "Gira format description"],
-      ["metaValueType", "string", "Gira value type"],
-    ];
-    for (const [suffix, type, name] of states) {
+    // Remove the state created by older adapter versions; the numeric format remains in raw meta.
+    await this.delObjectAsync(`${baseId}.metaFormat`).catch(() => undefined);
+    for (const [suffix, type, name] of CO_META_STATE_DEFINITIONS) {
       await this.extendObjectAsync(`${baseId}.${suffix}`, {
         type: "state",
-        common: { name, type, role: "info", read: true, write: false },
+        common: { name, type: type as ioBroker.StateCommon["type"], role: "info", read: true, write: false },
         native: {},
       });
     }
   }
 
-  private async fetchMeta(key: string, baseId: string): Promise<void> {
-    if (!this.client) return;
+  private async fetchMeta(key: string, baseId: string): Promise<boolean> {
+    if (!this.client) return false;
     try {
       const metaResp = await this.client.call(
         key,
@@ -1291,12 +1298,14 @@ class GiraEndpointAdapter extends utils.Adapter {
           val: JSON.stringify(metaResp.data),
           ack: true,
         });
+        return true;
       }
     } catch (err: any) {
       this.log.error(
         this.translate("Meta call failed for %s: %s", key, err?.message || err)
       );
     }
+    return false;
   }
 
   private async triggerUpdateOnStart(): Promise<void> {

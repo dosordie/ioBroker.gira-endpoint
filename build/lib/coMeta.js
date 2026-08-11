@@ -1,9 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GIRA_CO_FORMATS = void 0;
+exports.GIRA_CO_FORMATS = exports.CO_META_STATE_DEFINITIONS = void 0;
 exports.getCoMetaFormat = getCoMetaFormat;
 exports.getCoMetaFormatText = getCoMetaFormatText;
 exports.getCoMetaValueType = getCoMetaValueType;
+exports.CO_META_STATE_DEFINITIONS = Object.freeze([
+    ["metaFormatText", "string", "Gira format description"],
+    ["metaValueType", "string", "Gira value type"],
+]);
 exports.GIRA_CO_FORMATS = Object.freeze({
     1: "1 Bit",
     2: "8 Bit (0..100)",

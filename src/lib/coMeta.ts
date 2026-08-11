@@ -1,5 +1,10 @@
 export type CoMetaValueType = "boolean" | "number" | "string" | "unknown";
 
+export const CO_META_STATE_DEFINITIONS = Object.freeze([
+  ["metaFormatText", "string", "Gira format description"],
+  ["metaValueType", "string", "Gira value type"],
+] as const);
+
 export const GIRA_CO_FORMATS: Readonly<Record<number, string>> = Object.freeze({
   1: "1 Bit",
   2: "8 Bit (0..100)",
