@@ -5,6 +5,7 @@ import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
 import { CO_META_STATE_DEFINITIONS, CoMetaValueType, getCoMetaFormat, getCoMetaFormatText, getCoMetaValueType } from "./lib/coMeta";
 import { CO_META_MAX_CONCURRENCY, CoMetaRequestQueue } from "./lib/coMetaQueue";
+import { MetaWarningDeduplicator } from "./lib/metaWarningDeduplicator";
 import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults, MessageArchiveConfig } from "./lib/configParser";
 import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, buildMessageArchiveWriteRequest, buildSubscriptionKeys, extractMessageArchiveTokens, findNewMessageArchiveItems, getLastMessageArchiveState, getMessageArchiveEntryKey, getMessageArchiveEventItems, getMessageArchiveItems, getMessageArchiveSubscriptionKey, isMessageArchiveKey, messageArchiveWriteCreated, sanitizeArchiveId } from "./lib/messageArchive";
 import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
@@ -122,6 +123,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveDescMap = new Map<string, string>();
   private archiveQueryDefaults = new Map<string, ArchiveQueryDefaults>();
   private fetchedMeta = new Set<string>();
+  private readonly metaWarnings = new MetaWarningDeduplicator();
   private metaQueue?: CoMetaRequestQueue;
   private coMetaFormats = new Map<string, number>();
   private coMetaValueTypes = new Map<string, CoMetaValueType>();
@@ -1285,27 +1287,41 @@ class GiraEndpointAdapter extends utils.Adapter {
 
   private async fetchMeta(key: string, baseId: string): Promise<boolean> {
     if (!this.client) return false;
+    let metaResp: any;
     try {
-      const metaResp = await this.client.call(
+      metaResp = await this.client.call(
         key,
         "meta",
         undefined,
         this.makeTag("meta")
       );
+    } catch (err: any) {
+      this.warnCoMetaFetchFailed(key, err);
+      return false;
+    }
+
+    try {
       if (metaResp?.data !== undefined) {
         await this.applyMeta(key, baseId, metaResp.data);
         await this.setStateAsync(`${baseId}.meta`, {
           val: JSON.stringify(metaResp.data),
           ack: true,
         });
+        this.metaWarnings.reset(key);
         return true;
       }
     } catch (err: any) {
       this.log.error(
-        this.translate("Meta call failed for %s: %s", key, err?.message || err)
+        `Failed to process metadata for ${key}: ${err?.message || err}`
       );
     }
     return false;
+  }
+
+  private warnCoMetaFetchFailed(key: string, err: any): void {
+    const detail = String(err?.message || err);
+    if (!this.metaWarnings.shouldWarn(key, detail)) return;
+    this.log.warn(this.translate("Meta call failed for %s: %s", key, detail));
   }
 
   private async triggerUpdateOnStart(): Promise<void> {
@@ -1774,23 +1790,27 @@ class GiraEndpointAdapter extends utils.Adapter {
       if (!key) return true;
       const prom = this.client!.call(key, "meta", undefined, this.makeTag("meta"));
       if (prom) {
-        prom
-          .then(async (resp: any) => {
+        void (async () => {
+          let resp: any;
+          try {
+            resp = await prom;
+          } catch (err: any) {
+            this.warnCoMetaFetchFailed(key, err);
+            return;
+          }
+          try {
             await this.applyMeta(key, baseId, resp.data);
             await this.setStateAsync(id, {
               val: JSON.stringify(resp.data),
               ack: true,
             });
-          })
-          .catch((err: any) => {
+            this.metaWarnings.reset(key);
+          } catch (err: any) {
             this.log.error(
-              this.translate(
-                "Meta call failed for %s: %s",
-                key,
-                err?.message || err
-              )
+              `Failed to process metadata for ${key}: ${err?.message || err}`
             );
-          });
+          }
+        })();
       }
       return true;
     }
