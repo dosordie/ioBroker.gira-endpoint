@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
 import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults, MessageArchiveConfig } from "./lib/configParser";
-import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, extractMessageArchiveTokens, findNewMessageArchiveItems, getMessageArchiveItems } from "./lib/messageArchive";
+import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, extractMessageArchiveTokens, findNewMessageArchiveItems, getLatestMessageArchiveItem, getMessageArchiveEntryKey, getMessageArchiveEventItems, getMessageArchiveItems, sanitizeArchiveId } from "./lib/messageArchive";
 import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
 
 // Configuration options provided by ioBroker's admin interface
@@ -530,6 +530,16 @@ class GiraEndpointAdapter extends utils.Adapter {
           ["meta", { name: "Metadaten", type: "string", role: "json", read: true, write: false }],
           ["tokens", { name: "Tokens", type: "string", role: "json", read: true, write: false }],
           ["items", { name: "Letzte Meldungen", type: "string", role: "json", read: true, write: false }],
+          ["caption", { name: "Bezeichnung", type: "string", role: "text", read: true, write: false }],
+          ["description", { name: "Beschreibung", type: "string", role: "text", read: true, write: false }],
+          ["size", { name: "Archivgröße", type: "number", role: "value", read: true, write: false }],
+          ["count", { name: "Anzahl Meldungen", type: "number", role: "value", read: true, write: false }],
+          ["first", { name: "Erster Zeitstempel", type: "number", role: "value", read: true, write: false }],
+          ["last", { name: "Letzter Zeitstempel", type: "number", role: "value", read: true, write: false }],
+          ["lastMessage.key", { name: "Letzter Meldungsschlüssel", type: "string", role: "text", read: true, write: false }],
+          ["lastMessage.text", { name: "Letzter Meldungstext", type: "string", role: "text", read: true, write: false }],
+          ["lastMessage.ts", { name: "Letzter Meldungszeitstempel", type: "number", role: "value", read: true, write: false }],
+          ["lastMessage.time", { name: "Letzte Meldungszeit", type: "string", role: "text", read: true, write: false }],
           ["lastWriteReport", { name: "Schreibtest-Protokoll", type: "string", role: "json", read: true, write: false }],
           ["read", { name: "Meldungsarchiv lesen", type: "boolean", role: "button", read: true, write: true, def: false }],
           ["testWrite", { name: "Experimentellen Schreibtest starten", type: "boolean", role: "button", read: true, write: true, def: false }],
@@ -548,6 +558,9 @@ class GiraEndpointAdapter extends utils.Adapter {
       );
       const validArchiveBases = new Set(
         this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`)
+      );
+      const validMessageArchiveBases = new Set(
+        this.messageArchives.map((archive) => `MA@.${this.sanitizeArchiveId(archive.key)}`)
       );
       const objs = await this.getAdapterObjectsAsync();
       for (const fullId of Object.keys(objs)) {
@@ -569,6 +582,14 @@ class GiraEndpointAdapter extends utils.Adapter {
               "Deleting stale data archive state %s",
               id
             );
+            this.log.info(msg);
+            this.notifyAdmin(msg);
+            await this.delObjectAsync(id, { recursive: true });
+          }
+        } else if (id.startsWith("MA@.")) {
+          const base = id.split(".").slice(0, 2).join(".");
+          if (!validMessageArchiveBases.has(base)) {
+            const msg = this.translate("Deleting stale message archive state %s", id);
             this.log.info(msg);
             this.notifyAdmin(msg);
             await this.delObjectAsync(id, { recursive: true });
@@ -739,9 +760,11 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.messageArchives.find((candidate) => candidate.key.toLowerCase() === subscriptionKey.toLowerCase());
           if (archive) {
             const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
-            const items = getMessageArchiveItems(payload);
-            const value = items.length ? items : data;
-            await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(value), ack: true });
+            const items = getMessageArchiveEventItems(payload);
+            if (items.length) {
+              await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+              await this.updateLastMessageArchiveStates(baseId, items);
+            }
             this.log.info(`MA subscription event key=${archive.key} response=${JSON.stringify(payload)}`);
           }
           return;
@@ -1148,7 +1171,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private sanitizeArchiveId(s: string): string {
-    return s.replace(/^DA@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
+    return sanitizeArchiveId(s);
   }
 
   private sanitizeProp(s: string): string {
@@ -1394,12 +1417,34 @@ class GiraEndpointAdapter extends utils.Adapter {
     const tokens = extractMessageArchiveTokens(meta?.data);
     await this.setStateAsync(`${baseId}.meta`, { val: JSON.stringify(meta?.data), ack: true });
     await this.setStateAsync(`${baseId}.tokens`, { val: JSON.stringify(tokens), ack: true });
+    const metaData = meta?.data;
+    const metaStates: Array<[string, any]> = [
+      ["caption", metaData?.caption], ["description", metaData?.description], ["size", metaData?.size],
+      ["count", metaData?.stat?.count], ["first", metaData?.stat?.first], ["last", metaData?.stat?.last],
+    ];
+    for (const [name, value] of metaStates) {
+      if (value !== undefined && value !== null) await this.setStateAsync(`${baseId}.${name}`, { val: value, ack: true });
+    }
     this.log.info(`MA read meta key=${archive.key} response=${JSON.stringify(meta)}`);
     const get = await this.client!.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_get"));
     const items = getMessageArchiveItems(get);
     await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+    await this.updateLastMessageArchiveStates(baseId, items);
     this.log.info(`MA read get key=${archive.key} count=${archive.count} response=${JSON.stringify(get)}`);
     return { meta, get, tokens };
+  }
+
+  private async updateLastMessageArchiveStates(baseId: string, items: any[]): Promise<void> {
+    const item = getLatestMessageArchiveItem(items);
+    if (!item) return;
+    const key = getMessageArchiveEntryKey(item);
+    const timestamp = Number(item.ts);
+    if (key !== undefined) await this.setStateAsync(`${baseId}.lastMessage.key`, { val: key, ack: true });
+    if (item.text !== undefined && item.text !== null) await this.setStateAsync(`${baseId}.lastMessage.text`, { val: String(item.text), ack: true });
+    if (Number.isFinite(timestamp)) {
+      await this.setStateAsync(`${baseId}.lastMessage.ts`, { val: timestamp, ack: true });
+      await this.setStateAsync(`${baseId}.lastMessage.time`, { val: new Date(timestamp * 1000).toLocaleString(), ack: true });
+    }
   }
 
   private async runExperimentalMessageArchiveWrite(archive: MessageArchiveConfig): Promise<void> {
@@ -1431,9 +1476,10 @@ class GiraEndpointAdapter extends utils.Adapter {
         const after = await this.client!.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_verify"));
         attempt.verificationResponse = after;
         attempt.newItems = findNewMessageArchiveItems(before, after);
-        attempt.created = attempt.newItems.some((item: any) => String(item?.token) === archive.testToken);
+        attempt.created = attempt.newItems.some((item: any) => getMessageArchiveEntryKey(item) === archive.testToken);
         report.experimentalWrite.push(attempt);
         await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(getMessageArchiveItems(after)), ack: true });
+        await this.updateLastMessageArchiveStates(baseId, getMessageArchiveItems(after));
         await this.setStateAsync(`${baseId}.lastWriteReport`, { val: JSON.stringify(report), ack: true });
         if (attempt.created) { report.created = true; report.successfulRequest = request; break; }
         before = after;
