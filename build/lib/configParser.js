@@ -242,9 +242,27 @@ function parseArchiveConfig(cfg, helpers) {
 function parseAdapterConfig(cfg, helpers) {
     const endpointMapping = parseEndpointAndMappingConfig(cfg, helpers);
     const archiveConfig = parseArchiveConfig(cfg, helpers);
+    const messageArchives = [];
+    for (const archive of Array.isArray(cfg.messageArchives) ? cfg.messageArchives : []) {
+        if (!archive || archive.enabled === false)
+            continue;
+        const suffix = String(archive.key ?? "").trim().replace(/^MA@/i, "");
+        if (!suffix)
+            continue;
+        const count = Math.max(1, Math.min(100, Math.trunc(Number(archive.count) || 10)));
+        messageArchives.push({
+            key: `MA@${suffix}`,
+            name: String(archive.name ?? "").trim() || `MA@${suffix}`,
+            count,
+            testToken: String(archive.testToken ?? "").trim() || undefined,
+            testText: String(archive.testText ?? "ioBroker Test").trim() || "ioBroker Test",
+            experimentalWrite: archive.experimentalWrite === true,
+        });
+    }
     return {
         ...endpointMapping,
         ...archiveConfig,
+        messageArchives,
         connection: {
             host: String(cfg.host ?? "").trim(),
             port: Number(cfg.port ?? 80),

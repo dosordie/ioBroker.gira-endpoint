@@ -3,6 +3,7 @@ const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion"
 const { parseAdapterConfig } = require("../build/lib/configParser");
 const { normalizeArchiveQuery, isExecutableArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
 const { makeMinimalRequest, makeRequestKey, makeRequestKeys } = require("../build/lib/requestMatching");
+const { extractMessageArchiveTokens, getMessageArchiveItems, findNewMessageArchiveItems, EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS } = require("../build/lib/messageArchive");
 
 
 const fullArchiveRequest = {
@@ -44,6 +45,14 @@ const parserHelpers = {
   makeEndpointBaseId: (key) => `CO@.${String(key).replace(/^CO@/i, "")}`,
 };
 
+assert.deepStrictEqual(EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, ["add", "write", "insert", "set", "add_entry", "add_message", "trigger", "call"]);
+assert.deepStrictEqual(extractMessageArchiveTokens({ tokens: ["TEST", { token: "INFO" }], nested: { token: "WARN" } }), ["TEST", "INFO", "WARN"]);
+assert.deepStrictEqual(extractMessageArchiveTokens({ tokens: { SAFE: "Safe message", ALARM: "Alarm" } }), ["SAFE", "ALARM"]);
+const maBefore = { data: { items: [{ ts: 1, token: "TEST", text: "old" }] } };
+const maAfter = { data: { items: [{ ts: 2, token: "TEST", text: "new" }, { ts: 1, token: "TEST", text: "old" }] } };
+assert.deepStrictEqual(getMessageArchiveItems(maAfter), maAfter.data.items);
+assert.deepStrictEqual(findNewMessageArchiveItems(maBefore, maAfter), [maAfter.data.items[0]]);
+
 const parsedConnection = parseAdapterConfig(
   { host: " 1.2.3.4 ", port: "81", ssl: true, authHeader: true },
   parserHelpers
@@ -53,6 +62,19 @@ assert.equal(parsedConnection.connection.port, 81);
 assert.equal(parsedConnection.connection.ssl, true);
 assert.equal(parsedConnection.connection.path, "/endpoints/ws");
 assert.equal(parsedConnection.connection.authHeader, true);
+
+const parsedMessageArchive = parseAdapterConfig(
+  { messageArchives: [{ key: "TestArchiv", count: 250, testToken: " TEST ", experimentalWrite: true }] },
+  parserHelpers
+).messageArchives[0];
+assert.deepStrictEqual(parsedMessageArchive, {
+  key: "MA@TestArchiv",
+  name: "MA@TestArchiv",
+  count: 100,
+  testToken: "TEST",
+  testText: "ioBroker Test",
+  experimentalWrite: true,
+});
 
 const parsedArchiveString = parseAdapterConfig(
   { dataArchives: "Archiv1 Archiv2" },

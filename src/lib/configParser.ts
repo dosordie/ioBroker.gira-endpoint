@@ -81,6 +81,15 @@ export type AdapterConfigLike = {
         enabled?: boolean;
       }[]
     | string;
+  messageArchives?: {
+    key: string;
+    name?: string;
+    count?: number;
+    testToken?: string;
+    testText?: string;
+    experimentalWrite?: boolean;
+    enabled?: boolean;
+  }[];
 };
 
 export type ConnectionConfig = {
@@ -114,6 +123,16 @@ export type ParsedAdapterConfig = ParsedEndpointMappingConfig & {
   archiveKeys: string[];
   archiveDescMap: Map<string, string>;
   archiveQueryDefaults: Map<string, ArchiveQueryDefaults>;
+  messageArchives: MessageArchiveConfig[];
+};
+
+export type MessageArchiveConfig = {
+  key: string;
+  name: string;
+  count: number;
+  testToken?: string;
+  testText: string;
+  experimentalWrite: boolean;
 };
 
 export type ConfigParserHelpers = {
@@ -394,10 +413,26 @@ export function parseAdapterConfig(
 ): ParsedAdapterConfig {
   const endpointMapping = parseEndpointAndMappingConfig(cfg, helpers);
   const archiveConfig = parseArchiveConfig(cfg, helpers);
+  const messageArchives: MessageArchiveConfig[] = [];
+  for (const archive of Array.isArray(cfg.messageArchives) ? cfg.messageArchives : []) {
+    if (!archive || archive.enabled === false) continue;
+    const suffix = String(archive.key ?? "").trim().replace(/^MA@/i, "");
+    if (!suffix) continue;
+    const count = Math.max(1, Math.min(100, Math.trunc(Number(archive.count) || 10)));
+    messageArchives.push({
+      key: `MA@${suffix}`,
+      name: String(archive.name ?? "").trim() || `MA@${suffix}`,
+      count,
+      testToken: String(archive.testToken ?? "").trim() || undefined,
+      testText: String(archive.testText ?? "ioBroker Test").trim() || "ioBroker Test",
+      experimentalWrite: archive.experimentalWrite === true,
+    });
+  }
 
   return {
     ...endpointMapping,
     ...archiveConfig,
+    messageArchives,
     connection: {
       host: String(cfg.host ?? "").trim(),
       port: Number(cfg.port ?? 80),
