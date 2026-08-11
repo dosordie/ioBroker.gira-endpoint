@@ -7,8 +7,31 @@ exports.decodeCoValue = decodeCoValue;
 function normalizeTextEncoding(textEncoding) {
     return textEncoding === "latin1" ? "latin1" : "utf8";
 }
-function encodeUidValue(val, boolMode, textEncoding = "utf8") {
+function encodeUidValue(val, boolMode, textEncoding = "utf8", metaValueType = "unknown") {
     let method = "set";
+    if (val === null || val === undefined) {
+        return { uidValue: undefined, ackVal: val, method };
+    }
+    if (metaValueType === "string") {
+        const ackVal = String(val);
+        return {
+            uidValue: Buffer.from(ackVal, normalizeTextEncoding(textEncoding)).toString("base64"),
+            ackVal,
+            method,
+            encoding: "base64",
+        };
+    }
+    if (metaValueType === "boolean") {
+        const ackVal = typeof val === "string" ? val !== "0" && val !== "false" : Boolean(val);
+        return { uidValue: ackVal ? "1" : "0", ackVal, method };
+    }
+    if (metaValueType === "number") {
+        const ackVal = typeof val === "number" ? val : Number(val);
+        if (!Number.isFinite(ackVal)) {
+            return { uidValue: undefined, ackVal: val, method };
+        }
+        return { uidValue: String(ackVal), ackVal, method };
+    }
     let uidValue = val;
     let ackVal = val;
     if (boolMode) {
@@ -79,7 +102,20 @@ function decodeAckValue(val, boolMode) {
         return { value: val, type: "mixed" };
     }
 }
-function decodeCoValue(rawValue, boolMode, textEncoding = "utf8") {
+function decodeCoValue(rawValue, boolMode, textEncoding = "utf8", metaValueType = "unknown") {
+    if (metaValueType === "string") {
+        return {
+            value: Buffer.from(String(rawValue ?? ""), "base64").toString(normalizeTextEncoding(textEncoding)),
+            type: "string",
+        };
+    }
+    if (metaValueType === "boolean") {
+        return decodeAckValue(rawValue, true);
+    }
+    if (metaValueType === "number") {
+        const value = Number(rawValue);
+        return Number.isNaN(value) ? decodeCoValue(rawValue, boolMode, textEncoding) : { value, type: "number" };
+    }
     if (boolMode || typeof rawValue !== "string") {
         return decodeAckValue(rawValue, boolMode);
     }
