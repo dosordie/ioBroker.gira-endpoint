@@ -12,7 +12,8 @@ export class CoMetaRequestQueue {
   public constructor(
     private readonly request: (key: string) => Promise<boolean>,
     public readonly fetched: Set<string>,
-    private readonly maxConcurrency = CO_META_MAX_CONCURRENCY
+    private readonly maxConcurrency = CO_META_MAX_CONCURRENCY,
+    private readonly excluded = new Set<string>()
   ) {
     if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1) {
       throw new Error("Meta queue concurrency must be a positive integer");
@@ -20,6 +21,7 @@ export class CoMetaRequestQueue {
   }
 
   public enqueue(key: string): Promise<boolean> {
+    if (this.excluded.has(key)) return Promise.resolve(false);
     if (this.fetched.has(key)) return Promise.resolve(true);
     if (this.activeKeys.has(key) || this.pending.some((item) => item.key === key)) {
       return Promise.resolve(false);

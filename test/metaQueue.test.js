@@ -44,6 +44,20 @@ async function main() {
   assert.equal(retryFetched.has("CO@RETRY"), true);
   assert.equal(attempts, 2);
 
+  const failedSubscriptions = new Set(["CO@GEHTGARNED"]);
+  const fetchMetaCalls = [];
+  const subscriptionQueue = new CoMetaRequestQueue(async (key) => {
+    fetchMetaCalls.push(key);
+    return true;
+  }, new Set(), 1, failedSubscriptions);
+  assert.equal(await subscriptionQueue.enqueue("CO@GEHTGARNED"), false);
+  assert.deepStrictEqual(fetchMetaCalls, []);
+
+  // A later successful subscription in the same connection may fetch metadata.
+  failedSubscriptions.delete("CO@GEHTGARNED");
+  assert.equal(await subscriptionQueue.enqueue("CO@GEHTGARNED"), true);
+  assert.deepStrictEqual(fetchMetaCalls, ["CO@GEHTGARNED"]);
+
   // The same path is used for configured and later dynamically discovered COs.
   assert.equal(await retryQueue.enqueue("CO@DYNAMIC"), true);
   assert.equal(retryFetched.has("CO@DYNAMIC"), true);
