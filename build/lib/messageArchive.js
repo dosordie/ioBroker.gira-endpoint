@@ -3,6 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS = void 0;
 exports.extractMessageArchiveTokens = extractMessageArchiveTokens;
 exports.getMessageArchiveItems = getMessageArchiveItems;
+exports.sanitizeArchiveId = sanitizeArchiveId;
+exports.getMessageArchiveEntryKey = getMessageArchiveEntryKey;
+exports.getLatestMessageArchiveItem = getLatestMessageArchiveItem;
+exports.getMessageArchiveEventItems = getMessageArchiveEventItems;
 exports.messageArchiveEntryFingerprint = messageArchiveEntryFingerprint;
 exports.findNewMessageArchiveItems = findNewMessageArchiveItems;
 exports.EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS = [
@@ -57,8 +61,33 @@ function getMessageArchiveItems(response) {
     const candidates = [response?.data?.items, response?.items, response?.data?.data?.items, response?.data];
     return candidates.find(Array.isArray) ?? [];
 }
+function sanitizeArchiveId(value) {
+    return value.replace(/^(DA|MA)@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
+}
+function getMessageArchiveEntryKey(item) {
+    const value = item?.key ?? item?.token;
+    if (value === undefined || value === null)
+        return undefined;
+    return String(value);
+}
+function getLatestMessageArchiveItem(items) {
+    return items.reduce((latest, item) => {
+        const timestamp = Number(item?.ts);
+        if (!Number.isFinite(timestamp))
+            return latest;
+        return !latest || timestamp > Number(latest.ts) ? item : latest;
+    }, undefined);
+}
+function getMessageArchiveEventItems(payload) {
+    const items = getMessageArchiveItems(payload);
+    if (items.length)
+        return items;
+    const candidates = [payload?.data?.item, payload?.data?.stat, payload?.data?.data, payload?.data, payload?.item, payload];
+    return candidates.filter((item) => item && typeof item === "object" && !Array.isArray(item) &&
+        getMessageArchiveEntryKey(item) !== undefined && (item.text !== undefined || item.ts !== undefined));
+}
 function messageArchiveEntryFingerprint(item) {
-    return JSON.stringify({ ts: item?.ts, token: item?.token, text: item?.text });
+    return JSON.stringify({ ts: item?.ts, key: getMessageArchiveEntryKey(item), text: item?.text });
 }
 function findNewMessageArchiveItems(beforeResponse, afterResponse) {
     const beforeCounts = new Map();

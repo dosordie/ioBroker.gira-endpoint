@@ -3,7 +3,7 @@ const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion"
 const { parseAdapterConfig } = require("../build/lib/configParser");
 const { normalizeArchiveQuery, isExecutableArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
 const { makeMinimalRequest, makeRequestKey, makeRequestKeys } = require("../build/lib/requestMatching");
-const { extractMessageArchiveTokens, getMessageArchiveItems, findNewMessageArchiveItems, EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS } = require("../build/lib/messageArchive");
+const { extractMessageArchiveTokens, getMessageArchiveItems, findNewMessageArchiveItems, getMessageArchiveEntryKey, getLatestMessageArchiveItem, messageArchiveEntryFingerprint, sanitizeArchiveId, EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS } = require("../build/lib/messageArchive");
 
 
 const fullArchiveRequest = {
@@ -46,12 +46,22 @@ const parserHelpers = {
 };
 
 assert.deepStrictEqual(EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, ["add", "write", "insert", "set", "add_entry", "add_message", "trigger", "call"]);
+assert.equal(sanitizeArchiveId("MA@Trockner"), "trockner");
+assert.equal(sanitizeArchiveId("DA@Heizung"), "heizung");
 assert.deepStrictEqual(extractMessageArchiveTokens({ tokens: ["TEST", { token: "INFO" }], nested: { token: "WARN" } }), ["TEST", "INFO", "WARN"]);
 assert.deepStrictEqual(extractMessageArchiveTokens({ tokens: { SAFE: "Safe message", ALARM: "Alarm" } }), ["SAFE", "ALARM"]);
 const maBefore = { data: { items: [{ ts: 1, token: "TEST", text: "old" }] } };
 const maAfter = { data: { items: [{ ts: 2, token: "TEST", text: "new" }, { ts: 1, token: "TEST", text: "old" }] } };
 assert.deepStrictEqual(getMessageArchiveItems(maAfter), maAfter.data.items);
 assert.deepStrictEqual(findNewMessageArchiveItems(maBefore, maAfter), [maAfter.data.items[0]]);
+const realMaItem = { key: "State_finisch", text: "Trocknen fertig", ts: 1786448765.923075 };
+const documentedMaItem = { token: "State_finisch", text: "Trocknen fertig", ts: 1786448765.923075 };
+assert.equal(getMessageArchiveEntryKey(realMaItem), "State_finisch");
+assert.equal(getMessageArchiveEntryKey(documentedMaItem), "State_finisch");
+assert.equal(messageArchiveEntryFingerprint(realMaItem), messageArchiveEntryFingerprint(documentedMaItem));
+assert.deepStrictEqual(findNewMessageArchiveItems({ data: [documentedMaItem] }, { data: [documentedMaItem, { ...realMaItem, ts: realMaItem.ts + 1 }] }), [{ ...realMaItem, ts: realMaItem.ts + 1 }]);
+assert.equal(getMessageArchiveEntryKey({ key: "State_finisch" }), "State_finisch");
+assert.deepStrictEqual(getLatestMessageArchiveItem([{ ...realMaItem, ts: 1 }, realMaItem, { ...realMaItem, ts: 2 }]), realMaItem);
 
 const parsedConnection = parseAdapterConfig(
   { host: " 1.2.3.4 ", port: "81", ssl: true, authHeader: true },
