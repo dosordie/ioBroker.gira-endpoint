@@ -3,7 +3,7 @@ const { encodeUidValue, decodeCoValue } = require("../build/lib/valueConversion"
 const { parseAdapterConfig } = require("../build/lib/configParser");
 const { normalizeArchiveQuery, isExecutableArchiveQuery, buildLastArchiveQuery, formatArchiveStartAt } = require("../build/lib/archiveQuery");
 const { makeMinimalRequest, makeRequestKey, makeRequestKeys } = require("../build/lib/requestMatching");
-const { extractMessageArchiveTokens, getMessageArchiveItems, findNewMessageArchiveItems, getMessageArchiveEntryKey, getLatestMessageArchiveItem, messageArchiveEntryFingerprint, sanitizeArchiveId, EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS } = require("../build/lib/messageArchive");
+const { buildMessageArchiveWriteRequest, extractMessageArchiveTokens, getMessageArchiveItems, findNewMessageArchiveItems, getMessageArchiveEntryKey, getLatestMessageArchiveItem, getMessageArchiveSubscriptionKey, messageArchiveEntryFingerprint, messageArchiveWriteCreated, sanitizeArchiveId, EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS } = require("../build/lib/messageArchive");
 
 
 const fullArchiveRequest = {
@@ -54,6 +54,12 @@ const maBefore = { data: { items: [{ ts: 1, token: "TEST", text: "old" }] } };
 const maAfter = { data: { items: [{ ts: 2, token: "TEST", text: "new" }, { ts: 1, token: "TEST", text: "old" }] } };
 assert.deepStrictEqual(getMessageArchiveItems(maAfter), maAfter.data.items);
 assert.deepStrictEqual(findNewMessageArchiveItems(maBefore, maAfter), [maAfter.data.items[0]]);
+assert.equal(messageArchiveWriteCreated(maBefore, maAfter, "TEST"), true);
+assert.deepStrictEqual(buildMessageArchiveWriteRequest("MA@Trockner", "add", "State_finisch"), {
+  type: "call", param: { key: "MA@Trockner", method: "add", token: "State_finisch" },
+});
+assert.equal("text" in buildMessageArchiveWriteRequest("MA@Trockner", "add", "State_finisch").param, false);
+assert.equal(getMessageArchiveSubscriptionKey({ request: { param: { keys: ["MA@Trockner"] } }, data: { items: [{ key: "State_finisch" }] } }, ["MA@Trockner"]), "MA@Trockner");
 const realMaItem = { key: "State_finisch", text: "Trocknen fertig", ts: 1786448765.923075 };
 const documentedMaItem = { token: "State_finisch", text: "Trocknen fertig", ts: 1786448765.923075 };
 assert.equal(getMessageArchiveEntryKey(realMaItem), "State_finisch");
@@ -82,9 +88,17 @@ assert.deepStrictEqual(parsedMessageArchive, {
   name: "MA@TestArchiv",
   count: 100,
   testToken: "TEST",
-  testText: "ioBroker Test",
   experimentalWrite: true,
 });
+
+const separatedMaConfig = parseAdapterConfig({
+  endpointKeys: [{ key: "State_finisch" }, { key: "Licht" }],
+  messageArchives: [{ key: "Trockner", testToken: "State_finisch", testText: "legacy text" }],
+}, parserHelpers);
+assert.deepStrictEqual(separatedMaConfig.endpointKeys, ["CO@STATE_FINISCH", "CO@LICHT"]);
+assert.equal(separatedMaConfig.endpointKeys.includes("CO@MA@TROCKNER"), false);
+assert.equal(separatedMaConfig.endpointKeys.includes("CO@TROCKNER_AUF"), false);
+assert.equal("testText" in separatedMaConfig.messageArchives[0], false);
 
 const parsedArchiveString = parseAdapterConfig(
   { dataArchives: "Archiv1 Archiv2" },
