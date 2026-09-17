@@ -9,7 +9,7 @@ import { MetaWarningDeduplicator } from "./lib/metaWarningDeduplicator";
 import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults, MessageArchiveConfig } from "./lib/configParser";
 import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, buildMessageArchiveWriteRequest, buildSubscriptionKeys, extractMessageArchiveTokens, findNewMessageArchiveItems, getLastMessageArchiveState, getMessageArchiveEntryKey, getMessageArchiveEventItems, getMessageArchiveItems, getMessageArchiveSubscriptionKey, isMessageArchiveKey, messageArchiveWriteCreated, sanitizeArchiveId } from "./lib/messageArchive";
 import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
-import { extractRunning, extractTimestamp, normalizeSceneKey, normalizeSequenceKey, sanitizeSceneId, sanitizeSequenceId, SCENE_ACTION_METHODS, SEQUENCE_ACTION_METHODS } from "./lib/sceneSequence";
+import { extractRunning, extractTimestamp, getScenePushRefreshMethod, normalizeSceneKey, normalizeSequenceKey, sanitizeSceneId, sanitizeSequenceId, SCENE_ACTION_METHODS, SEQUENCE_ACTION_METHODS } from "./lib/sceneSequence";
 
 // Configuration options provided by ioBroker's admin interface
 // (extend as needed when more options are supported)
@@ -1336,6 +1336,18 @@ class GiraEndpointAdapter extends utils.Adapter {
     const timestamp = extractTimestamp(data);
     if (/^SC@/i.test(key)) {
       if (timestamp !== undefined) await this.setStateAsync(`${this.sceneBase(key)}.lastModified`, { val: timestamp, ack: true });
+      const refreshMethod = getScenePushRefreshMethod(data);
+      if (refreshMethod) {
+        try {
+          const actors = await this.specialCall(key, refreshMethod);
+          await this.setStateAsync(`${this.sceneBase(key)}.actors`, {
+            val: JSON.stringify(actors?.data ?? actors),
+            ack: true,
+          });
+        } catch {
+          // specialCall records the failure; a push must never break event handling.
+        }
+      }
     } else {
       const running = extractRunning(data);
       if (running !== undefined) await this.setStateAsync(`${this.sequenceBase(key)}.running`, { val: running, ack: true });
@@ -1571,9 +1583,11 @@ class GiraEndpointAdapter extends utils.Adapter {
       if (this.client) {
         try {
           this.client.unsubscribe([...this.endpointKeys, ...this.sceneKeys, ...this.sequenceKeys]);
-          const states = await this.getStatesAsync("CO@.*.subscription");
-          for (const id of Object.keys(states)) {
-            await this.setStateAsync(id, { val: false, ack: true });
+          for (const pattern of ["CO@.*.subscription", "SC@.*.subscription", "SQ@.*.subscription"]) {
+            const states = await this.getStatesAsync(pattern);
+            for (const id of Object.keys(states)) {
+              await this.setStateAsync(id, { val: false, ack: true });
+            }
           }
         } catch (err) {
           this.log.error(

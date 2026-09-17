@@ -1146,6 +1146,19 @@ class GiraEndpointAdapter extends utils.Adapter {
         if (/^SC@/i.test(key)) {
             if (timestamp !== undefined)
                 await this.setStateAsync(`${this.sceneBase(key)}.lastModified`, { val: timestamp, ack: true });
+            const refreshMethod = (0, sceneSequence_1.getScenePushRefreshMethod)(data);
+            if (refreshMethod) {
+                try {
+                    const actors = await this.specialCall(key, refreshMethod);
+                    await this.setStateAsync(`${this.sceneBase(key)}.actors`, {
+                        val: JSON.stringify(actors?.data ?? actors),
+                        ack: true,
+                    });
+                }
+                catch {
+                    // specialCall records the failure; a push must never break event handling.
+                }
+            }
         }
         else {
             const running = (0, sceneSequence_1.extractRunning)(data);
@@ -1352,9 +1365,11 @@ class GiraEndpointAdapter extends utils.Adapter {
             if (this.client) {
                 try {
                     this.client.unsubscribe([...this.endpointKeys, ...this.sceneKeys, ...this.sequenceKeys]);
-                    const states = await this.getStatesAsync("CO@.*.subscription");
-                    for (const id of Object.keys(states)) {
-                        await this.setStateAsync(id, { val: false, ack: true });
+                    for (const pattern of ["CO@.*.subscription", "SC@.*.subscription", "SQ@.*.subscription"]) {
+                        const states = await this.getStatesAsync(pattern);
+                        for (const id of Object.keys(states)) {
+                            await this.setStateAsync(id, { val: false, ack: true });
+                        }
                     }
                 }
                 catch (err) {
