@@ -18,7 +18,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 concurrency:
   group: create-release
@@ -153,19 +152,9 @@ jobs:
             git push origin "$TAG"
           fi
 
-  publish:
-    name: Publish npm package
-    needs: prepare
-    uses: ./.github/workflows/publish.yml
-    with:
-      ref: ${{ needs.prepare.outputs.tag }}
-    secrets: inherit
-
   release:
     name: Create GitHub Release
-    needs:
-      - prepare
-      - publish
+    needs: prepare
     runs-on: ubuntu-latest
 
     steps:
