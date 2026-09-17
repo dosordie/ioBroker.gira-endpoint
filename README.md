@@ -164,3 +164,20 @@ iobroker upload gira-endpoint
 
 ```
 ---
+
+## Szenen (`SC@`)
+
+Konfigurierte HomeServer-Szenen stellen die Aktionen `call`, `learn`, `offsetPlus`,
+`offsetMinus`, `listNext` und `listPrevious` bereit. `actors` enthält die per
+`get_items` gelesene Aktorenliste als JSON; sie wird beim Verbindungsaufbau, nach
+`learn` und über `refreshActors` aktualisiert. Metadaten, Änderungszeit und
+Subscription-Status werden ebenfalls angezeigt.
+
+> Szenen besitzen keinen „active“-Status. `call` ist eine Aktion und kein dauerhaft gültiger Zustand.
+
+## Sequenzen (`SQ@`)
+
+Sequenzen können mit `start` und `stop` gesteuert werden. `running` wird beim
+Verbindungsaufbau über `get_state` initialisiert und danach live über die bestehende
+WebSocket-Subscription aktualisiert. Zusätzlich stehen `lastChange`, Metadaten,
+`restartAllowed` und der Subscription-Status zur Verfügung.

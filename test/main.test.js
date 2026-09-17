@@ -341,3 +341,21 @@ try {
     throw err;
   }
 }
+
+const { normalizeSceneKey, normalizeSequenceKey, sanitizeSceneId, sanitizeSequenceId, SCENE_ACTION_METHODS, SEQUENCE_ACTION_METHODS, extractRunning } = require("../build/lib/sceneSequence");
+assert.equal(normalizeSceneKey(" Fernsehen "), "SC@Fernsehen");
+assert.equal(normalizeSceneKey("sc@Abend"), "SC@Abend");
+assert.equal(normalizeSequenceKey(" Garten "), "SQ@Garten");
+assert.equal(normalizeSequenceKey("SQ@Rollladen"), "SQ@Rollladen");
+assert.equal(sanitizeSceneId("SC@Mein Szene"), "Mein_Szene");
+assert.equal(sanitizeSequenceId("SQ@Garten Abend"), "Garten_Abend");
+assert.deepStrictEqual(SCENE_ACTION_METHODS, { call: "call", learn: "learn", offsetPlus: "offset_plus", offsetMinus: "offset_minus", listNext: "list_next", listPrevious: "list_prev" });
+assert.deepStrictEqual(SEQUENCE_ACTION_METHODS, { start: "start", stop: "stop" });
+assert.equal("active" in SCENE_ACTION_METHODS, false);
+assert.equal(extractRunning({ running: true }), true);
+assert.equal(extractRunning({ data: { running: false } }), false);
+const parsedSpecial = parseAdapterConfig({ scenes: [{ key: "Fernsehen", name: "TV" }, { key: "SC@Aus" }, { key: "disabled", enabled: false }], sequences: [{ key: "Garten" }, { key: "SQ@Abend", name: "Abendfolge" }] }, parserHelpers);
+assert.deepStrictEqual(parsedSpecial.sceneKeys, ["SC@Fernsehen", "SC@Aus"]);
+assert.equal(parsedSpecial.sceneDescMap.get("SC@Fernsehen"), "TV");
+assert.deepStrictEqual(parsedSpecial.sequenceKeys, ["SQ@Garten", "SQ@Abend"]);
+assert.equal(parsedSpecial.sequenceDescMap.get("SQ@Abend"), "Abendfolge");

@@ -1,5 +1,6 @@
 import { normalizeTextEncoding, TextEncoding } from "./valueConversion";
 import { isArchiveStartAt, normalizeArchiveCols } from "./archiveQuery";
+import { normalizeSceneKey, normalizeSequenceKey } from "./sceneSequence";
 
 export type AdapterConfigLike = {
   host?: string;
@@ -89,6 +90,8 @@ export type AdapterConfigLike = {
     experimentalWrite?: boolean;
     enabled?: boolean;
   }[];
+  scenes?: { key: string; name?: string; enabled?: boolean }[];
+  sequences?: { key: string; name?: string; enabled?: boolean }[];
 };
 
 export type ConnectionConfig = {
@@ -123,6 +126,10 @@ export type ParsedAdapterConfig = ParsedEndpointMappingConfig & {
   archiveDescMap: Map<string, string>;
   archiveQueryDefaults: Map<string, ArchiveQueryDefaults>;
   messageArchives: MessageArchiveConfig[];
+  sceneKeys: string[];
+  sequenceKeys: string[];
+  sceneDescMap: Map<string, string>;
+  sequenceDescMap: Map<string, string>;
 };
 
 export type MessageArchiveConfig = {
@@ -426,6 +433,21 @@ export function parseAdapterConfig(
 ): ParsedAdapterConfig {
   const endpointMapping = parseEndpointAndMappingConfig(cfg, helpers);
   const archiveConfig = parseArchiveConfig(cfg, helpers);
+  const parseNamed = (items: any, normalize: (key: string) => string) => {
+    const keys: string[] = [];
+    const descriptions = new Map<string, string>();
+    for (const item of Array.isArray(items) ? items : []) {
+      if (!item || item.enabled === false) continue;
+      const key = normalize(String(item.key ?? ""));
+      if (!key || keys.includes(key)) continue;
+      keys.push(key);
+      const name = String(item.name ?? "").trim();
+      if (name) descriptions.set(key, name);
+    }
+    return { keys, descriptions };
+  };
+  const scenes = parseNamed(cfg.scenes, normalizeSceneKey);
+  const sequences = parseNamed(cfg.sequences, normalizeSequenceKey);
   const messageArchives: MessageArchiveConfig[] = [];
   for (const archive of Array.isArray(cfg.messageArchives) ? cfg.messageArchives : []) {
     if (!archive || archive.enabled === false) continue;
@@ -445,6 +467,10 @@ export function parseAdapterConfig(
     ...endpointMapping,
     ...archiveConfig,
     messageArchives,
+    sceneKeys: scenes.keys,
+    sequenceKeys: sequences.keys,
+    sceneDescMap: scenes.descriptions,
+    sequenceDescMap: sequences.descriptions,
     connection: {
       host: String(cfg.host ?? "").trim(),
       port: Number(cfg.port ?? 80),
