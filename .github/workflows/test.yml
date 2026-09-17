@@ -23,6 +23,8 @@ jobs:
           node-version: '24.x'
           install-command: 'npm install --no-audit --no-fund'
           type-checking: true
+          type-checking-command: 'npm run check'
+          test-command: 'npm run test'
 
   test:
     name: Node ${{ matrix.node-version }} tests
