@@ -1,12 +1,10 @@
-name: Publish ioBroker.gira-endpoint
+name: Publish ioBroker.gira-endpoint to npm
 
 on:
-  release:
-    types: [published]
-  workflow_call:
+  workflow_dispatch:
     inputs:
       ref:
-        description: "Git ref/tag to publish"
+        description: "Git ref/tag to publish, for example v0.6.0"
         required: true
         type: string
 
@@ -14,25 +12,19 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Resolve release ref
-        id: release_ref
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_call" ]; then
-            echo "ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout release tag
+      - name: Checkout selected ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.release_ref.outputs.ref }}
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
 
       - name: Use Node 24 + npm registry
@@ -45,7 +37,7 @@ jobs:
       - name: Validate tag and package versions
         shell: bash
         env:
-          RELEASE_REF: ${{ steps.release_ref.outputs.ref }}
+          RELEASE_REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
           TAG="${RELEASE_REF#refs/tags/}"
@@ -54,17 +46,17 @@ jobs:
           IO_PACKAGE_VERSION="$(node -p "require('./io-package.json').common.version")"
 
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tag must use vX.Y.Z, got: $TAG"
+            echo "Publish ref must use vX.Y.Z, got: $TAG"
             exit 1
           fi
 
           if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
-            echo "package.json version $PACKAGE_VERSION does not match release tag $TAG"
+            echo "package.json version $PACKAGE_VERSION does not match $TAG"
             exit 1
           fi
 
           if [ "$IO_PACKAGE_VERSION" != "$VERSION" ]; then
-            echo "io-package.json version $IO_PACKAGE_VERSION does not match release tag $TAG"
+            echo "io-package.json version $IO_PACKAGE_VERSION does not match $TAG"
             exit 1
           fi
 
