@@ -81,6 +81,14 @@ export type AdapterConfigLike = {
         enabled?: boolean;
       }[]
     | string;
+  messageArchives?: {
+    key: string;
+    name?: string;
+    count?: number;
+    testToken?: string;
+    experimentalWrite?: boolean;
+    enabled?: boolean;
+  }[];
 };
 
 export type ConnectionConfig = {
@@ -114,6 +122,15 @@ export type ParsedAdapterConfig = ParsedEndpointMappingConfig & {
   archiveKeys: string[];
   archiveDescMap: Map<string, string>;
   archiveQueryDefaults: Map<string, ArchiveQueryDefaults>;
+  messageArchives: MessageArchiveConfig[];
+};
+
+export type MessageArchiveConfig = {
+  key: string;
+  name: string;
+  count: number;
+  testToken?: string;
+  experimentalWrite: boolean;
 };
 
 export type ConfigParserHelpers = {
@@ -153,6 +170,17 @@ export type ParsedEndpointMappingConfig = {
   skipInitialUpdate: Set<string>;
   updateOnStartSources: UpdateOnStartSource[];
 };
+
+const NON_CO_GIRA_PREFIX = /^(?:MA|DA|CA|SC|SQ|TI|VC|CP)@/i;
+
+/**
+ * A prefixed Gira object cannot be configured as a communication object. Bare
+ * names remain valid because they may intentionally refer to real COs.
+ */
+export function isCommunicationObjectKey(rawKey: string): boolean {
+  const key = String(rawKey ?? "").trim();
+  return Boolean(key) && !NON_CO_GIRA_PREFIX.test(key);
+}
 
 function rememberKeyCase(
   keyCaseMap: Map<string, string>,
@@ -205,6 +233,7 @@ export function parseEndpointAndMappingConfig(
       if (typeof k === "object" && k) {
         if ((k as any).enabled === false) continue;
         const rawKey = String((k as any).key ?? "").trim();
+        if (!isCommunicationObjectKey(rawKey)) continue;
         const key = helpers.normalizeKey(rawKey);
         if (!key) continue;
         rememberKeyCase(keyCaseMap, key, rawKey || key);
@@ -233,6 +262,7 @@ export function parseEndpointAndMappingConfig(
         endpointKeys.push(key);
       } else {
         const rawKey = String(k).trim();
+        if (!isCommunicationObjectKey(rawKey)) continue;
         const key = helpers.normalizeKey(rawKey);
         if (!key) continue;
         rememberKeyCase(keyCaseMap, key, rawKey || key);
@@ -245,6 +275,7 @@ export function parseEndpointAndMappingConfig(
       .map((k) => k.trim())
       .filter((k) => k);
     for (const rawKey of arr) {
+      if (!isCommunicationObjectKey(rawKey)) continue;
       const key = helpers.normalizeKey(rawKey);
       if (!key) continue;
       rememberKeyCase(keyCaseMap, key, rawKey);
@@ -268,6 +299,7 @@ export function parseEndpointAndMappingConfig(
       if ((m as any).enabled === false) continue;
       const stateId = String((m as any).stateId ?? "").trim();
       const rawKey = String((m as any).key ?? "").trim();
+      if (!isCommunicationObjectKey(rawKey)) continue;
       const key = helpers.normalizeKey(rawKey);
       if (!stateId || !key) continue;
       rememberKeyCase(keyCaseMap, key, rawKey || key);
@@ -394,10 +426,25 @@ export function parseAdapterConfig(
 ): ParsedAdapterConfig {
   const endpointMapping = parseEndpointAndMappingConfig(cfg, helpers);
   const archiveConfig = parseArchiveConfig(cfg, helpers);
+  const messageArchives: MessageArchiveConfig[] = [];
+  for (const archive of Array.isArray(cfg.messageArchives) ? cfg.messageArchives : []) {
+    if (!archive || archive.enabled === false) continue;
+    const suffix = String(archive.key ?? "").trim().replace(/^MA@/i, "");
+    if (!suffix) continue;
+    const count = Math.max(1, Math.min(100, Math.trunc(Number(archive.count) || 10)));
+    messageArchives.push({
+      key: `MA@${suffix}`,
+      name: String(archive.name ?? "").trim() || `MA@${suffix}`,
+      count,
+      testToken: String(archive.testToken ?? "").trim() || undefined,
+      experimentalWrite: archive.experimentalWrite === true,
+    });
+  }
 
   return {
     ...endpointMapping,
     ...archiveConfig,
+    messageArchives,
     connection: {
       host: String(cfg.host ?? "").trim(),
       port: Number(cfg.port ?? 80),

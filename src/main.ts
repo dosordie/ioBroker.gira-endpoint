@@ -3,7 +3,11 @@ import { GiraClient, codeToMessage } from "./lib/GiraClient";
 import { randomUUID } from "crypto";
 import { format } from "util";
 import { decodeAckValue, decodeCoValue, encodeUidValue, TextEncoding } from "./lib/valueConversion";
-import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults } from "./lib/configParser";
+import { CO_META_STATE_DEFINITIONS, CoMetaValueType, getCoMetaFormat, getCoMetaFormatText, getCoMetaValueType } from "./lib/coMeta";
+import { CO_META_MAX_CONCURRENCY, CoMetaRequestQueue } from "./lib/coMetaQueue";
+import { MetaWarningDeduplicator } from "./lib/metaWarningDeduplicator";
+import { parseAdapterConfig, ForwardMapping, ReverseMapping, UpdateOnStartSource, ArchiveQueryDefaults, MessageArchiveConfig } from "./lib/configParser";
+import { EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS, buildMessageArchiveWriteRequest, buildSubscriptionKeys, extractMessageArchiveTokens, findNewMessageArchiveItems, getLastMessageArchiveState, getMessageArchiveEntryKey, getMessageArchiveEventItems, getMessageArchiveItems, getMessageArchiveSubscriptionKey, isMessageArchiveKey, messageArchiveWriteCreated, sanitizeArchiveId } from "./lib/messageArchive";
 import { buildLastArchiveQuery, isExecutableArchiveQuery, normalizeArchiveCols, normalizeArchiveQuery } from "./lib/archiveQuery";
 
 // Configuration options provided by ioBroker's admin interface
@@ -71,6 +75,7 @@ interface AdapterConfig extends ioBroker.AdapterConfig {
       textEncoding?: TextEncoding;
     }[];
   }[];
+  messageArchives?: MessageArchiveConfig[];
   dataArchives?:
     | string[]
     | {
@@ -109,6 +114,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   private initialSkipUpdate = new Set<string>();
   private updateOnStartSources: UpdateOnStartSource[] = [];
   private pendingSubscriptions = new Set<string>();
+  private warnedMissingSubscriptions = new Set<string>();
   private isConnected = false;
   private pendingHsRestart = false;
   private archiveKeys: string[] = [];
@@ -117,6 +123,15 @@ class GiraEndpointAdapter extends utils.Adapter {
   private archiveDescMap = new Map<string, string>();
   private archiveQueryDefaults = new Map<string, ArchiveQueryDefaults>();
   private fetchedMeta = new Set<string>();
+  private failedSubscriptionMeta = new Set<string>();
+  private readonly metaWarnings = new MetaWarningDeduplicator();
+  private metaQueue?: CoMetaRequestQueue;
+  private coMetaFormats = new Map<string, number>();
+  private coMetaValueTypes = new Map<string, CoMetaValueType>();
+  private messageArchives: MessageArchiveConfig[] = [];
+  private messageArchiveIdKeyMap = new Map<string, string>();
+  private messageArchiveConfigMap = new Map<string, MessageArchiveConfig>();
+  private messageArchiveWriteRunning = new Set<string>();
 
 
   private formatLogValue(value: any, maxLength = 200): string {
@@ -139,11 +154,17 @@ class GiraEndpointAdapter extends utils.Adapter {
     uidValue: string;
     bool: boolean;
     textEncoding: TextEncoding;
+    metaFormat?: number;
+    metaValueType: CoMetaValueType;
   }): void {
     const statePart = args.stateId ? ` stateId=${args.stateId}` : "";
     this.log.debug(
-      `Sending CO value source=${args.source}${statePart} key=${args.key} method=${args.method} ackVal=${this.formatLogValue(args.ackVal)} uidValue=${this.formatLogValue(args.uidValue)} bool=${args.bool} textEncoding=${args.textEncoding}`
+      `Sending CO value source=${args.source}${statePart} key=${args.key} method=${args.method} metaFormat=${args.metaFormat ?? "unknown"} metaValueType=${args.metaValueType} ackVal=${this.formatLogValue(args.ackVal)} uidValue=${this.formatLogValue(args.uidValue)} boolMapping=${args.bool} textEncoding=${args.textEncoding}`
     );
+  }
+
+  private getCoCallParams(uidValue: string, metaValueType: CoMetaValueType): any {
+    return metaValueType === "string" ? { value: uidValue, encoding: "base64" } : uidValue;
   }
 
   private notifyAdmin(message: string): void {
@@ -240,6 +261,12 @@ class GiraEndpointAdapter extends utils.Adapter {
         native: {},
       });
 
+      await this.setObjectNotExistsAsync("MA@", {
+        type: "channel",
+        common: { name: this.translate("MA@") },
+        native: {},
+      });
+
       await this.setObjectNotExistsAsync("DA@", {
         type: "channel",
         common: { name: this.translate("DA@") },
@@ -282,6 +309,8 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.archiveKeys = parsed.archiveKeys;
       this.archiveDescMap = parsed.archiveDescMap;
       this.archiveQueryDefaults = parsed.archiveQueryDefaults;
+      this.messageArchives = parsed.messageArchives;
+      this.messageArchiveConfigMap = new Map(parsed.messageArchives.map((archive) => [archive.key, archive]));
 
       for (const key of this.endpointKeys) {
         if (!this.keyDescMap.has(key)) this.keyDescMap.set(key, key);
@@ -379,6 +408,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           },
           native: {},
         });
+        await this.ensureCoMetaStates(baseId);
         this.log.debug(
           this.translate("Pre-created endpoint channel %s", baseId)
         );
@@ -508,20 +538,59 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.subscribeStates(`${baseId}.last`);
       }
 
+      for (const archive of this.messageArchives) {
+        const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+        this.messageArchiveIdKeyMap.set(baseId, archive.key);
+        await this.setObjectNotExistsAsync(baseId, { type: "channel", common: { name: archive.name }, native: {} });
+        const states: Array<[string, ioBroker.StateCommon]> = [
+          ["meta", { name: "Metadaten", type: "string", role: "json", read: true, write: false }],
+          ["tokens", { name: "Tokens", type: "string", role: "json", read: true, write: false }],
+          ["items", { name: "Letzte Meldungen", type: "string", role: "json", read: true, write: false }],
+          ["caption", { name: "Bezeichnung", type: "string", role: "text", read: true, write: false }],
+          ["description", { name: "Beschreibung", type: "string", role: "text", read: true, write: false }],
+          ["size", { name: "Archivgröße", type: "number", role: "value", read: true, write: false }],
+          ["count", { name: "Anzahl Meldungen", type: "number", role: "value", read: true, write: false }],
+          ["first", { name: "Erster Zeitstempel", type: "number", role: "value", read: true, write: false }],
+          ["last", { name: "Letzter Zeitstempel", type: "number", role: "value", read: true, write: false }],
+          ["lastMessage.key", { name: "Letzter Meldungsschlüssel", type: "string", role: "text", read: true, write: false }],
+          ["lastMessage.text", { name: "Letzter Meldungstext", type: "string", role: "text", read: true, write: false }],
+          ["lastMessage.ts", { name: "Letzter Meldungszeitstempel", type: "number", role: "value", read: true, write: false }],
+          ["lastMessage.time", { name: "Letzte Meldungszeit", type: "string", role: "text", read: true, write: false }],
+          ["lastWriteReport", { name: "Schreibtest-Protokoll", type: "string", role: "json", read: true, write: false }],
+          ["read", { name: "Meldungsarchiv lesen", type: "boolean", role: "button", read: true, write: true, def: false }],
+          ["testWrite", { name: "Experimentellen Schreibtest starten", type: "boolean", role: "button", read: true, write: true, def: false }],
+        ];
+        for (const [stateName, common] of states) {
+          await this.setObjectNotExistsAsync(`${baseId}.${stateName}`, { type: "state", common, native: {} });
+        }
+        await this.setStateAsync(`${baseId}.read`, { val: false, ack: true });
+        await this.setStateAsync(`${baseId}.testWrite`, { val: false, ack: true });
+        this.subscribeStates(`${baseId}.read`);
+        this.subscribeStates(`${baseId}.testWrite`);
+      }
+
       const validBaseIds = new Set(
         this.endpointKeys.map((k) => this.makeEndpointBaseId(k))
       );
       const validArchiveBases = new Set(
         this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`)
       );
+      const validMessageArchiveBases = new Set(
+        this.messageArchives.map((archive) => `MA@.${this.sanitizeArchiveId(archive.key)}`)
+      );
       const objs = await this.getAdapterObjectsAsync();
+      const legacyMaCoBases = new Set<string>();
+      for (const archive of this.messageArchives) {
+        legacyMaCoBases.add(this.makeEndpointBaseId(this.normalizeKey(archive.key)));
+        if (archive.testToken) legacyMaCoBases.add(this.makeEndpointBaseId(this.normalizeKey(archive.testToken)));
+      }
       for (const fullId of Object.keys(objs)) {
         const id = fullId.startsWith(this.namespace + ".")
           ? fullId.slice(this.namespace.length + 1)
           : fullId;
         if (id.startsWith("CO@.")) {
           const base = id.split(".").slice(0, 2).join(".");
-          if (!validBaseIds.has(base)) {
+          if (legacyMaCoBases.has(base) && !validBaseIds.has(base)) {
             const msg = this.translate("Deleting stale endpoint state %s", id);
             this.log.info(msg);
             this.notifyAdmin(msg);
@@ -534,6 +603,14 @@ class GiraEndpointAdapter extends utils.Adapter {
               "Deleting stale data archive state %s",
               id
             );
+            this.log.info(msg);
+            this.notifyAdmin(msg);
+            await this.delObjectAsync(id, { recursive: true });
+          }
+        } else if (id.startsWith("MA@.")) {
+          const base = id.split(".").slice(0, 2).join(".");
+          if (!validMessageArchiveBases.has(base)) {
+            const msg = this.translate("Deleting stale message archive state %s", id);
             this.log.info(msg);
             this.notifyAdmin(msg);
             await this.delObjectAsync(id, { recursive: true });
@@ -594,19 +671,40 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.log.info(this.translate("Connected to %s", url));
         this.isConnected = true;
         this.setState("info.connection", true, true);
-        this.fetchedMeta.clear();
+        // Give each connection its own metadata and subscription-result caches.
+        // An older request finishing during reconnect must not affect the new session.
+        this.fetchedMeta = new Set<string>();
+        this.failedSubscriptionMeta = new Set<string>();
+        this.metaQueue = new CoMetaRequestQueue(
+          async (key) => this.fetchMeta(key, this.keyIdMap.get(key) ?? this.makeEndpointBaseId(key)),
+          this.fetchedMeta,
+          CO_META_MAX_CONCURRENCY,
+          this.failedSubscriptionMeta
+        );
         this.skipInitialUpdate = new Set(this.initialSkipUpdate);
-        if (this.endpointKeys.length) {
+        const subscriptionKeys = buildSubscriptionKeys(
+          this.endpointKeys,
+          this.messageArchives.map((archive) => archive.key)
+        );
+        this.warnedMissingSubscriptions.clear();
+        if (subscriptionKeys.length) {
           this.pendingSubscriptions = new Set(
             this.endpointKeys.map((k) => this.normalizeKey(k))
           );
-          this.client!.subscribe(this.endpointKeys);
+          this.client!.subscribe(subscriptionKeys);
         } else {
           this.log.info(
             this.translate("Subscribing to all endpoint events (no keys configured)")
           );
           this.pendingSubscriptions.clear();
           this.client!.subscribe([]);
+        }
+        if (this.messageArchives.length) {
+          for (const archive of this.messageArchives) {
+            void this.readMessageArchive(archive).catch((err: any) => {
+              this.log.error(`MA read failed key=${archive.key}: ${err?.message || err}`);
+            });
+          }
         }
         for (const [key, params] of this.archiveQueryDefaults.entries()) {
           const baseId = this.archiveKeyIdMap.get(key);
@@ -690,8 +788,24 @@ class GiraEndpointAdapter extends utils.Adapter {
         const data = payload?.data;
         if (!data) return;
 
+        const subscriptionKey = getMessageArchiveSubscriptionKey(payload, this.messageArchives.map((archive) => archive.key));
+        if (subscriptionKey) {
+          const archive = this.messageArchiveConfigMap.get(subscriptionKey) ??
+            this.messageArchives.find((candidate) => candidate.key.toLowerCase() === subscriptionKey.toLowerCase());
+          if (archive) {
+            const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+            const items = getMessageArchiveEventItems(payload);
+            if (items.length) {
+              await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+              await this.updateLastMessageArchiveStates(baseId, items);
+            }
+            this.log.info(`MA subscription event key=${archive.key} response=${JSON.stringify(payload)}`);
+          }
+          return;
+        }
+
         const tag = payload?.tag;
-        if (typeof tag === "string" && tag.startsWith("meta_")) {
+        if (typeof tag === "string" && (tag.startsWith("meta_") || tag.startsWith("ma_meta_"))) {
           // Responses for meta calls are handled separately
           return;
         }
@@ -753,19 +867,42 @@ class GiraEndpointAdapter extends utils.Adapter {
         }
 
         const entries: Array<{ key: string; data: any; code?: number }> = [];
+        let configuredSubscriptionCompleted = false;
 
         // Case 1: subscription result lists multiple items
-        if (typeof data === "object" && Array.isArray((data as any).items)) {
+        if (payload.type === "subscribe" && typeof data === "object" && Array.isArray((data as any).items)) {
+          configuredSubscriptionCompleted = true;
           const received = new Set<string>();
           for (const item of (data as any).items) {
             if (!item) continue;
             const key =
               item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
             if (key === undefined) continue;
+            const messageArchiveKeys = this.messageArchives.map((archive) => archive.key);
+            if (isMessageArchiveKey(key, messageArchiveKeys)) {
+              const archive = this.messageArchives.find(
+                (candidate) => candidate.key.toLowerCase() === String(key).toLowerCase()
+              );
+              if (archive) {
+                const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+                const items = getMessageArchiveEventItems(item.data ?? item);
+                if (items.length) {
+                  await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+                  await this.updateLastMessageArchiveStates(baseId, items);
+                }
+              }
+              continue;
+            }
             const normalized = this.normalizeKey(key);
             received.add(normalized);
             const success =
               item.code !== undefined ? item.code === 0 : !("error" in item);
+            if (success) {
+              this.failedSubscriptionMeta.delete(normalized);
+            } else {
+              this.failedSubscriptionMeta.add(normalized);
+              this.fetchedMeta.delete(normalized);
+            }
             this.rememberKeyCase(normalized, String(key));
             const baseId =
               this.keyIdMap.get(normalized) ?? this.makeEndpointBaseId(normalized);
@@ -834,9 +971,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                 native: {},
               });
               await this.setStateAsync(subId, { val: false, ack: true });
-              const msg = this.translate("No subscription response for %s", key);
-              this.log.warn(msg);
-              this.notifyAdmin(msg);
+              if (!this.warnedMissingSubscriptions.has(key)) {
+                this.warnedMissingSubscriptions.add(key);
+                const msg = this.translate("No subscription response for %s", key);
+                this.log.warn(msg);
+                this.notifyAdmin(msg);
+              }
             }
           }
           for (const key of pending) this.pendingSubscriptions.delete(key);
@@ -886,7 +1026,8 @@ class GiraEndpointAdapter extends utils.Adapter {
           const boolKey = this.boolKeys.has(normalized);
           const textEncoding = this.keyTextEncodingMap.get(normalized) ?? "utf8";
           const rawVal = data.value;
-          const decoded = decodeCoValue(rawVal, boolKey, textEncoding);
+          const metaValueType = this.coMetaValueTypes.get(normalized) ?? "unknown";
+          const decoded = decodeCoValue(rawVal, boolKey, textEncoding, metaValueType);
           const value = decoded.value;
           const type = decoded.type;
 
@@ -933,6 +1074,12 @@ class GiraEndpointAdapter extends utils.Adapter {
             native: {},
           });
           const success = code === undefined || code === 0;
+          if (success) {
+            this.failedSubscriptionMeta.delete(normalized);
+          } else {
+            this.failedSubscriptionMeta.add(normalized);
+            this.fetchedMeta.delete(normalized);
+          }
           await this.setStateAsync(subId, { val: success, ack: true });
           if (!success) {
             let msg = this.translate(
@@ -975,10 +1122,7 @@ class GiraEndpointAdapter extends utils.Adapter {
           this.subscribeStates(`${baseId}.value`);
           this.subscribeStates(`${baseId}.meta`);
 
-          if (!this.fetchedMeta.has(normalized)) {
-            this.fetchedMeta.add(normalized);
-            this.fetchMeta(normalized, baseId);
-          }
+          void this.metaQueue?.enqueue(normalized);
 
           const message = codeToMessage(code ?? payload.code ?? 0);
           const statusText =
@@ -1048,6 +1192,9 @@ class GiraEndpointAdapter extends utils.Adapter {
             }
           }
         }
+        if (configuredSubscriptionCompleted) {
+          void this.metaQueue?.enqueueAll(this.endpointKeys);
+        }
       });
 
       this.client.connect();
@@ -1091,7 +1238,7 @@ class GiraEndpointAdapter extends utils.Adapter {
   }
 
   private sanitizeArchiveId(s: string): string {
-    return s.replace(/^DA@/i, "").replace(/[^a-z0-9@_\-\.]/gi, "_").toLowerCase();
+    return sanitizeArchiveId(s);
   }
 
   private sanitizeProp(s: string): string {
@@ -1109,41 +1256,87 @@ class GiraEndpointAdapter extends utils.Adapter {
     archive = false
   ): Promise<void> {
     if (!meta || typeof meta !== "object") return;
-    const name = meta.desc || meta.name || meta.label;
-    if (!name) return;
+    const name = meta.caption || meta.desc || meta.name || meta.label;
     if (archive) {
-      this.archiveDescMap.set(key, name);
+      if (name) this.archiveDescMap.set(key, name);
     } else {
-      this.keyDescMap.set(key, name);
+      if (name) this.keyDescMap.set(key, name);
+      const format = getCoMetaFormat(meta);
+      const valueType = getCoMetaValueType(meta);
+      if (format !== undefined) this.coMetaFormats.set(key, format);
+      this.coMetaValueTypes.set(key, valueType);
+      await this.ensureCoMetaStates(baseId);
+      await this.setStateAsync(`${baseId}.metaFormatText`, {
+        val: getCoMetaFormatText(meta) ?? "Unknown",
+        ack: true,
+      });
+      await this.setStateAsync(`${baseId}.metaValueType`, { val: valueType, ack: true });
+      if (valueType !== "unknown") {
+        await this.extendObjectAsync(`${baseId}.value`, {
+          type: "state",
+          common: { type: valueType },
+          native: {},
+        });
+      }
     }
-    await this.extendObjectAsync(baseId, {
-      type: "channel",
-      common: { name },
-      native: {},
-    });
+    if (name) {
+      await this.extendObjectAsync(baseId, {
+        type: "channel",
+        common: { name },
+        native: {},
+      });
+    }
   }
 
-  private async fetchMeta(key: string, baseId: string): Promise<void> {
-    if (!this.client) return;
+  private async ensureCoMetaStates(baseId: string): Promise<void> {
+    // Remove the state created by older adapter versions; the numeric format remains in raw meta.
+    await this.delObjectAsync(`${baseId}.metaFormat`).catch(() => undefined);
+    for (const [suffix, type, name] of CO_META_STATE_DEFINITIONS) {
+      await this.extendObjectAsync(`${baseId}.${suffix}`, {
+        type: "state",
+        common: { name, type: type as ioBroker.StateCommon["type"], role: "info", read: true, write: false },
+        native: {},
+      });
+    }
+  }
+
+  private async fetchMeta(key: string, baseId: string): Promise<boolean> {
+    if (!this.client) return false;
+    let metaResp: any;
     try {
-      const metaResp = await this.client.call(
+      metaResp = await this.client.call(
         key,
         "meta",
         undefined,
         this.makeTag("meta")
       );
+    } catch (err: any) {
+      this.warnCoMetaFetchFailed(key, err);
+      return false;
+    }
+
+    try {
       if (metaResp?.data !== undefined) {
         await this.applyMeta(key, baseId, metaResp.data);
         await this.setStateAsync(`${baseId}.meta`, {
           val: JSON.stringify(metaResp.data),
           ack: true,
         });
+        this.metaWarnings.reset(key);
+        return true;
       }
     } catch (err: any) {
       this.log.error(
-        this.translate("Meta call failed for %s: %s", key, err?.message || err)
+        `Failed to process metadata for ${key}: ${err?.message || err}`
       );
     }
+    return false;
+  }
+
+  private warnCoMetaFetchFailed(key: string, err: any): void {
+    const detail = String(err?.message || err);
+    if (!this.metaWarnings.shouldWarn(key, detail)) return;
+    this.log.warn(this.translate("Meta call failed for %s: %s", key, detail));
   }
 
   private async triggerUpdateOnStart(): Promise<void> {
@@ -1168,7 +1361,19 @@ class GiraEndpointAdapter extends utils.Adapter {
           : await this.getStateAsync(src.stateId);
         if (!state) continue;
 
-        const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool, src.textEncoding);
+        if (state.val === null || state.val === undefined) {
+          this.log.debug(`Skipping mapping source=updateOnStart stateId=${src.stateId} key=${src.key} because source value is null/undefined`);
+          continue;
+        }
+        const metaValueType = this.coMetaValueTypes.get(src.key) ?? "unknown";
+        if (metaValueType === "string" && src.bool) {
+          this.log.warn(`${src.key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+        }
+        const { uidValue, ackVal, method } = encodeUidValue(state.val, src.bool, src.textEncoding, metaValueType);
+        if (uidValue === undefined) {
+          this.log.warn(`Skipping CO write source=updateOnStart stateId=${src.stateId} key=${src.key} because value ${this.formatLogValue(state.val)} is not a finite number`);
+          continue;
+        }
         this.logOutgoingCoValue({
           source: "updateOnStart",
           stateId: src.stateId,
@@ -1178,8 +1383,10 @@ class GiraEndpointAdapter extends utils.Adapter {
           uidValue,
           bool: src.bool,
           textEncoding: src.textEncoding,
+          metaFormat: this.coMetaFormats.get(src.key),
+          metaValueType,
         });
-        this.client.call(src.key, method, uidValue);
+        this.client.call(src.key, method, this.getCoCallParams(uidValue, metaValueType));
 
         const baseId = this.keyIdMap.get(src.key) ?? this.makeEndpointBaseId(src.key);
         this.keyIdMap.set(src.key, baseId);
@@ -1257,6 +1464,8 @@ class GiraEndpointAdapter extends utils.Adapter {
     const mapped = this.forwardMap.get(id);
     if (mapped && this.handleMappedStateChange(id, state, mapped)) return;
 
+    if (this.handleMessageArchiveStateChange(id, state)) return;
+
     if (this.handleArchiveStateChange(id, state)) return;
 
     if (this.handleDirectCoStateChange(id, state)) return;
@@ -1276,7 +1485,19 @@ class GiraEndpointAdapter extends utils.Adapter {
       );
       return true;
     }
-    const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool, mapped.textEncoding);
+    if (state.val === null || state.val === undefined) {
+      this.log.debug(`Skipping mapping stateId=${id} key=${mapped.key} because source value is null/undefined`);
+      return true;
+    }
+    const metaValueType = this.coMetaValueTypes.get(mapped.key) ?? "unknown";
+    if (metaValueType === "string" && mapped.bool) {
+      this.log.warn(`${mapped.key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+    }
+    const { uidValue, ackVal, method } = encodeUidValue(state.val, mapped.bool, mapped.textEncoding, metaValueType);
+    if (uidValue === undefined) {
+      this.log.warn(`Skipping CO write source=mapping stateId=${id} key=${mapped.key} because value ${this.formatLogValue(state.val)} is not a finite number`);
+      return true;
+    }
     this.logOutgoingCoValue({
       source: "mapping",
       stateId: id,
@@ -1286,8 +1507,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       uidValue,
       bool: mapped.bool,
       textEncoding: mapped.textEncoding,
+      metaFormat: this.coMetaFormats.get(mapped.key),
+      metaValueType,
     });
-    this.client!.call(mapped.key, method, uidValue);
+    this.client!.call(mapped.key, method, this.getCoCallParams(uidValue, metaValueType));
     const baseId =
       this.keyIdMap.get(mapped.key) ?? this.makeEndpointBaseId(mapped.key);
     this.keyIdMap.set(mapped.key, baseId);
@@ -1307,6 +1530,127 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.clearTimeout(timer);
     }, 1000);
     return true;
+  }
+
+  private handleMessageArchiveStateChange(id: string, state: ioBroker.State): boolean {
+    if (!id.startsWith("MA@.")) return false;
+    if (state.ack) return true;
+    const parts = id.split(".");
+    const action = parts.pop();
+    const baseId = parts.join(".");
+    const key = this.messageArchiveIdKeyMap.get(baseId);
+    const archive = key ? this.messageArchiveConfigMap.get(key) : undefined;
+    if (!archive || (action !== "read" && action !== "testWrite")) return true;
+    void this.setStateAsync(id, { val: false, ack: true });
+    if (state.val !== true) return true;
+    if (action === "read") {
+      void this.readMessageArchive(archive).catch((err: any) => {
+        this.log.error(`MA read failed key=${archive.key}: ${err?.message || err}`);
+      });
+    }
+    else void this.runExperimentalMessageArchiveWrite(archive);
+    return true;
+  }
+
+  private async readMessageArchive(archive: MessageArchiveConfig): Promise<{ meta: any; get: any; tokens: string[] }> {
+    const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+    const meta = await this.client!.call(archive.key, "meta", undefined, this.makeTag("ma_meta"));
+    const tokens = extractMessageArchiveTokens(meta?.data);
+    await this.cleanupLegacyMessageArchiveCoObjects(archive, tokens);
+    await this.setStateAsync(`${baseId}.meta`, { val: JSON.stringify(meta?.data), ack: true });
+    await this.setStateAsync(`${baseId}.tokens`, { val: JSON.stringify(tokens), ack: true });
+    const metaData = meta?.data;
+    const metaStates: Array<[string, any]> = [
+      ["caption", metaData?.caption], ["description", metaData?.description], ["size", metaData?.size],
+      ["count", metaData?.stat?.count], ["first", metaData?.stat?.first], ["last", metaData?.stat?.last],
+    ];
+    for (const [name, value] of metaStates) {
+      if (value !== undefined && value !== null) await this.setStateAsync(`${baseId}.${name}`, { val: value, ack: true });
+    }
+    this.log.info(`MA read meta key=${archive.key} response=${JSON.stringify(meta)}`);
+    const get = await this.client!.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_get"));
+    const items = getMessageArchiveItems(get);
+    await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(items), ack: true });
+    await this.updateLastMessageArchiveStates(baseId, items);
+    this.log.info(`MA read get key=${archive.key} count=${archive.count} response=${JSON.stringify(get)}`);
+    return { meta, get, tokens };
+  }
+
+  private async updateLastMessageArchiveStates(baseId: string, items: any[]): Promise<void> {
+    const state = getLastMessageArchiveState(items);
+    if (!state) return;
+    if (state.key !== undefined) await this.setStateAsync(`${baseId}.lastMessage.key`, { val: state.key, ack: true });
+    if (state.text !== undefined) await this.setStateAsync(`${baseId}.lastMessage.text`, { val: state.text, ack: true });
+    if (state.ts !== undefined) await this.setStateAsync(`${baseId}.lastMessage.ts`, { val: state.ts, ack: true });
+    if (state.time !== undefined) await this.setStateAsync(`${baseId}.lastMessage.time`, { val: state.time, ack: true });
+  }
+
+  private async cleanupLegacyMessageArchiveCoObjects(archive: MessageArchiveConfig, tokens: string[]): Promise<void> {
+    const legitimate = new Set(this.endpointKeys.map((key) => this.makeEndpointBaseId(key)));
+    const candidates = new Set([archive.key, archive.testToken, ...tokens].filter((value): value is string => Boolean(value)));
+    for (const candidate of candidates) {
+      const baseId = this.makeEndpointBaseId(this.normalizeKey(candidate));
+      if (legitimate.has(baseId)) {
+        if (tokens.includes(candidate)) {
+          this.log.warn(
+            `Configured endpoint "${candidate}" matches a token of message archive ${archive.key}. ` +
+            "Keeping it because it may be a real CO."
+          );
+        }
+        continue;
+      }
+      if (!(await this.getObjectAsync(baseId))) continue;
+      this.log.info(`Deleting legacy message-archive CO object ${baseId}`);
+      await this.delObjectAsync(baseId, { recursive: true });
+    }
+  }
+
+  private async runExperimentalMessageArchiveWrite(archive: MessageArchiveConfig): Promise<void> {
+    const baseId = `MA@.${this.sanitizeArchiveId(archive.key)}`;
+    if (this.messageArchiveWriteRunning.has(archive.key)) return;
+    this.messageArchiveWriteRunning.add(archive.key);
+    const report: any = { key: archive.key, officialRead: {}, experimentalWrite: [], created: false };
+    try {
+      if (!archive.experimentalWrite) throw new Error("Experimenteller Schreibtest ist in der Konfiguration nicht freigegeben.");
+      const initial = await this.readMessageArchive(archive);
+      report.officialRead = { metaCode: initial.meta?.code, getCode: initial.get?.code, tokens: initial.tokens };
+      if (!archive.testToken) throw new Error("Kein sicherer Test-Token konfiguriert; es wird kein Token erfunden.");
+      if (!initial.tokens.includes(archive.testToken)) throw new Error(`Test-Token ${archive.testToken} ist nicht in meta vorhanden.`);
+      let before = initial.get;
+      for (const method of EXPERIMENTAL_MESSAGE_ARCHIVE_METHODS) {
+        // Deliberately keep every probe minimal. More parameter variants would
+        // multiply side effects without adding a safe, documented guarantee.
+        const request = buildMessageArchiveWriteRequest(archive.key, method, archive.testToken);
+        const attempt: any = { method, request };
+        try {
+          const response = await this.client!.call(archive.key, method, { token: archive.testToken }, this.makeTag(`ma_${method}`));
+          attempt.statusCode = response?.code;
+          attempt.statusText = codeToMessage(Number(response?.code));
+          attempt.response = response;
+        } catch (err: any) {
+          attempt.statusCode = err?.code;
+          attempt.statusText = codeToMessage(Number(err?.code));
+          attempt.response = err?.response ?? { error: err?.message || String(err) };
+        }
+        this.log.info(`MA experimental write key=${archive.key} method=${method} response=${JSON.stringify(attempt.response)}`);
+        const after = await this.client!.call(archive.key, "get", { count: archive.count }, this.makeTag("ma_verify"));
+        attempt.verificationResponse = after;
+        attempt.newItems = findNewMessageArchiveItems(before, after);
+        attempt.created = messageArchiveWriteCreated(before, after, archive.testToken);
+        report.experimentalWrite.push(attempt);
+        await this.setStateAsync(`${baseId}.items`, { val: JSON.stringify(getMessageArchiveItems(after)), ack: true });
+        await this.updateLastMessageArchiveStates(baseId, getMessageArchiveItems(after));
+        await this.setStateAsync(`${baseId}.lastWriteReport`, { val: JSON.stringify(report), ack: true });
+        if (attempt.created) { report.created = true; report.successfulRequest = request; break; }
+        before = after;
+      }
+    } catch (err: any) {
+      report.error = err?.message || String(err);
+      this.log.error(`MA experimental write aborted key=${archive.key}: ${report.error}`);
+    } finally {
+      await this.setStateAsync(`${baseId}.lastWriteReport`, { val: JSON.stringify(report), ack: true });
+      this.messageArchiveWriteRunning.delete(archive.key);
+    }
   }
 
   private handleArchiveStateChange(id: string, state: ioBroker.State): boolean {
@@ -1461,23 +1805,27 @@ class GiraEndpointAdapter extends utils.Adapter {
       if (!key) return true;
       const prom = this.client!.call(key, "meta", undefined, this.makeTag("meta"));
       if (prom) {
-        prom
-          .then(async (resp: any) => {
+        void (async () => {
+          let resp: any;
+          try {
+            resp = await prom;
+          } catch (err: any) {
+            this.warnCoMetaFetchFailed(key, err);
+            return;
+          }
+          try {
             await this.applyMeta(key, baseId, resp.data);
             await this.setStateAsync(id, {
               val: JSON.stringify(resp.data),
               ack: true,
             });
-          })
-          .catch((err: any) => {
+            this.metaWarnings.reset(key);
+          } catch (err: any) {
             this.log.error(
-              this.translate(
-                "Meta call failed for %s: %s",
-                key,
-                err?.message || err
-              )
+              `Failed to process metadata for ${key}: ${err?.message || err}`
             );
-          });
+          }
+        })();
       }
       return true;
     }
@@ -1488,7 +1836,19 @@ class GiraEndpointAdapter extends utils.Adapter {
       this.normalizeKey(parts.slice(1, parts.length - 1).join("."));
     const boolKey = this.boolKeys.has(key);
     const textEncoding = this.keyTextEncodingMap.get(key) ?? "utf8";
-    const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey, textEncoding);
+    if (state.val === null || state.val === undefined) {
+      this.log.debug(`Skipping direct CO write key=${key} because source value is null/undefined`);
+      return true;
+    }
+    const metaValueType = this.coMetaValueTypes.get(key) ?? "unknown";
+    if (metaValueType === "string" && boolKey) {
+      this.log.warn(`${key} is format 22 (string), but boolean mapping is enabled. String transport will be used.`);
+    }
+    const { uidValue, ackVal, method } = encodeUidValue(state.val, boolKey, textEncoding, metaValueType);
+    if (uidValue === undefined) {
+      this.log.warn(`Skipping CO write source=direct stateId=${id} key=${key} because value ${this.formatLogValue(state.val)} is not a finite number`);
+      return true;
+    }
     this.logOutgoingCoValue({
       source: "direct",
       stateId: id,
@@ -1498,8 +1858,10 @@ class GiraEndpointAdapter extends utils.Adapter {
       uidValue,
       bool: boolKey,
       textEncoding,
+      metaFormat: this.coMetaFormats.get(key),
+      metaValueType,
     });
-    this.client!.call(key, method, uidValue);
+    this.client!.call(key, method, this.getCoCallParams(uidValue, metaValueType));
     const mappedForeign = this.reverseMap.get(key);
     if (mappedForeign) {
       let mappedVal = decodeAckValue(ackVal, mappedForeign.bool).value;
