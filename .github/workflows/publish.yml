@@ -3,6 +3,12 @@ name: Publish ioBroker.gira-endpoint
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref/tag to publish"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,8 +19,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Resolve release ref
+        id: release_ref
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_call" ]; then
+            echo "ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout release tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release_ref.outputs.ref }}
+          fetch-depth: 0
 
       - name: Use Node 24 + npm registry
         uses: actions/setup-node@v4
@@ -23,10 +42,37 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           always-auth: true
 
-      # package-lock.json is currently older than package.json.
-      # npm install keeps releases unblocked until the lockfile is regenerated and committed.
+      - name: Validate tag and package versions
+        shell: bash
+        env:
+          RELEASE_REF: ${{ steps.release_ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          IO_PACKAGE_VERSION="$(node -p "require('./io-package.json').common.version")"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use vX.Y.Z, got: $TAG"
+            exit 1
+          fi
+
+          if [ "$PACKAGE_VERSION" != "$VERSION" ]; then
+            echo "package.json version $PACKAGE_VERSION does not match release tag $TAG"
+            exit 1
+          fi
+
+          if [ "$IO_PACKAGE_VERSION" != "$VERSION" ]; then
+            echo "io-package.json version $IO_PACKAGE_VERSION does not match release tag $TAG"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Type check
+        run: npm run check --if-present
 
       - name: Build
         run: npm run build --if-present
@@ -37,7 +83,21 @@ jobs:
       - name: Sanity check
         run: npm pack --dry-run
 
+      - name: Check whether npm version already exists
+        id: npm_version
+        shell: bash
+        run: |
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published; skipping npm publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: steps.npm_version.outputs.exists != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public --provenance
