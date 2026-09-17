@@ -1,0 +1,58 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+      - work
+      - dev
+  pull_request: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ioBroker checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: ioBroker/testing-action-check@v1
+        with:
+          node-version: '24.x'
+          install-command: 'npm install --no-audit --no-fund'
+          type-checking: true
+          type-checking-command: 'npm run check'
+          test-command: 'npm run test'
+
+  test:
+    name: Node ${{ matrix.node-version }} tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Current @iobroker/testing installs js-controller 7.x, which requires Node >=22.
+        node-version:
+          - '22.x'
+          - '24.x'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # package-lock.json is currently older than package.json.
+      # Use npm install until the lockfile is regenerated and committed.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        run: npm run build --if-present
+
+      - name: Test
+        run: npm run test --if-present
