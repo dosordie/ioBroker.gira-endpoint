@@ -5,6 +5,7 @@ exports.parseEndpointAndMappingConfig = parseEndpointAndMappingConfig;
 exports.parseAdapterConfig = parseAdapterConfig;
 const valueConversion_1 = require("./valueConversion");
 const archiveQuery_1 = require("./archiveQuery");
+const sceneSequence_1 = require("./sceneSequence");
 const NON_CO_GIRA_PREFIX = /^(?:MA|DA|CA|SC|SQ|TI|VC|CP)@/i;
 /**
  * A prefixed Gira object cannot be configured as a communication object. Bare
@@ -260,6 +261,24 @@ function parseArchiveConfig(cfg, helpers) {
 function parseAdapterConfig(cfg, helpers) {
     const endpointMapping = parseEndpointAndMappingConfig(cfg, helpers);
     const archiveConfig = parseArchiveConfig(cfg, helpers);
+    const parseNamed = (items, normalize) => {
+        const keys = [];
+        const descriptions = new Map();
+        for (const item of Array.isArray(items) ? items : []) {
+            if (!item || item.enabled === false)
+                continue;
+            const key = normalize(String(item.key ?? ""));
+            if (!key || keys.includes(key))
+                continue;
+            keys.push(key);
+            const name = String(item.name ?? "").trim();
+            if (name)
+                descriptions.set(key, name);
+        }
+        return { keys, descriptions };
+    };
+    const scenes = parseNamed(cfg.scenes, sceneSequence_1.normalizeSceneKey);
+    const sequences = parseNamed(cfg.sequences, sceneSequence_1.normalizeSequenceKey);
     const messageArchives = [];
     for (const archive of Array.isArray(cfg.messageArchives) ? cfg.messageArchives : []) {
         if (!archive || archive.enabled === false)
@@ -280,6 +299,10 @@ function parseAdapterConfig(cfg, helpers) {
         ...endpointMapping,
         ...archiveConfig,
         messageArchives,
+        sceneKeys: scenes.keys,
+        sequenceKeys: sequences.keys,
+        sceneDescMap: scenes.descriptions,
+        sequenceDescMap: sequences.descriptions,
         connection: {
             host: String(cfg.host ?? "").trim(),
             port: Number(cfg.port ?? 80),

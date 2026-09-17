@@ -341,3 +341,39 @@ try {
     throw err;
   }
 }
+
+const { normalizeSceneKey, normalizeSequenceKey, sanitizeSceneId, sanitizeSequenceId, SCENE_ACTION_METHODS, SEQUENCE_ACTION_METHODS, extractRunning, extractTimestamp, isSceneModified, getScenePushRefreshMethod } = require("../build/lib/sceneSequence");
+assert.equal(normalizeSceneKey(" Fernsehen "), "SC@FERNSEHEN");
+assert.equal(normalizeSceneKey("sc@fernsehen"), "SC@FERNSEHEN");
+assert.equal(normalizeSceneKey("SC@FERNSEHEN"), "SC@FERNSEHEN");
+assert.equal(normalizeSequenceKey(" Garten "), "SQ@GARTEN");
+assert.equal(normalizeSequenceKey("sq@garten"), "SQ@GARTEN");
+assert.equal(normalizeSequenceKey("SQ@GARTEN"), "SQ@GARTEN");
+assert.equal(sanitizeSceneId("SC@Mein Szene"), "MEIN_SZENE");
+assert.equal(sanitizeSequenceId("SQ@Garten Abend"), "GARTEN_ABEND");
+assert.equal(sanitizeSceneId("SC@Wohnzimmer.TV"), "WOHNZIMMER_TV");
+assert.equal(sanitizeSequenceId("SQ@Garten.Bewaesserung"), "GARTEN_BEWAESSERUNG");
+assert.equal(sanitizeSceneId("SC@Fernsehen"), sanitizeSceneId("sc@FERNSEHEN"));
+assert.equal(sanitizeSequenceId("SQ@Garten"), sanitizeSequenceId("sq@GARTEN"));
+assert.deepStrictEqual(SCENE_ACTION_METHODS, { call: "call", learn: "learn", offsetPlus: "offset_plus", offsetMinus: "offset_minus", listNext: "list_next", listPrevious: "list_prev" });
+assert.deepStrictEqual(SEQUENCE_ACTION_METHODS, { start: "start", stop: "stop" });
+assert.equal("active" in SCENE_ACTION_METHODS, false);
+assert.equal(extractRunning({ running: true }), true);
+assert.equal(extractRunning({ data: { running: false } }), false);
+assert.equal(extractTimestamp({ ts: 1789641234 }), 1789641234000);
+assert.equal(extractTimestamp({ ts: 1789641234.123 }), 1789641234123);
+assert.equal(extractTimestamp({ ts: 1789641234123 }), 1789641234123);
+assert.equal(extractTimestamp({ ts: "invalid" }), undefined);
+assert.equal(extractTimestamp({ ts: null }), undefined);
+assert.equal(isSceneModified({ ts: 1234567890, modified: true }), true);
+assert.equal(isSceneModified({ modified: false }), false);
+assert.equal(getScenePushRefreshMethod({ modified: true }), "get_items");
+assert.equal(getScenePushRefreshMethod({ modified: false }), undefined);
+const parsedSpecial = parseAdapterConfig({ scenes: [{ key: "Fernsehen", name: "TV" }, { key: "SC@Aus" }, { key: "disabled", enabled: false }], sequences: [{ key: "Garten" }, { key: "SQ@Abend", name: "Abendfolge" }] }, parserHelpers);
+assert.deepStrictEqual(parsedSpecial.sceneKeys, ["SC@FERNSEHEN", "SC@AUS"]);
+assert.equal(parsedSpecial.sceneDescMap.get("SC@FERNSEHEN"), "TV");
+assert.deepStrictEqual(parsedSpecial.sequenceKeys, ["SQ@GARTEN", "SQ@ABEND"]);
+assert.equal(parsedSpecial.sequenceDescMap.get("SQ@ABEND"), "Abendfolge");
+const parsedCaseDuplicates = parseAdapterConfig({ scenes: [{ key: "Fernsehen" }, { key: "sc@FERNSEHEN" }], sequences: [{ key: "Garten" }, { key: "SQ@GARTEN" }] }, parserHelpers);
+assert.deepStrictEqual(parsedCaseDuplicates.sceneKeys, ["SC@FERNSEHEN"]);
+assert.deepStrictEqual(parsedCaseDuplicates.sequenceKeys, ["SQ@GARTEN"]);

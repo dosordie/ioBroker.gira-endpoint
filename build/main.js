@@ -44,6 +44,7 @@ const metaWarningDeduplicator_1 = require("./lib/metaWarningDeduplicator");
 const configParser_1 = require("./lib/configParser");
 const messageArchive_1 = require("./lib/messageArchive");
 const archiveQuery_1 = require("./lib/archiveQuery");
+const sceneSequence_1 = require("./lib/sceneSequence");
 class GiraEndpointAdapter extends utils.Adapter {
     formatLogValue(value, maxLength = 200) {
         let text;
@@ -107,6 +108,10 @@ class GiraEndpointAdapter extends utils.Adapter {
         this.messageArchiveIdKeyMap = new Map();
         this.messageArchiveConfigMap = new Map();
         this.messageArchiveWriteRunning = new Set();
+        this.sceneKeys = [];
+        this.sequenceKeys = [];
+        this.sceneDescMap = new Map();
+        this.sequenceDescMap = new Map();
         const origTranslate = this.translate;
         this.translate = (text, ...args) => {
             if (typeof origTranslate === "function") {
@@ -193,6 +198,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                 common: { name: this.translate("DA@") },
                 native: {},
             });
+            await this.setObjectNotExistsAsync("SC@", { type: "channel", common: { name: "Scenes" }, native: {} });
+            await this.setObjectNotExistsAsync("SQ@", { type: "channel", common: { name: "Sequences" }, native: {} });
             const cfg = this.config;
             const parsed = (0, configParser_1.parseAdapterConfig)(cfg, {
                 normalizeKey: this.normalizeKey.bind(this),
@@ -214,6 +221,10 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.archiveDescMap = parsed.archiveDescMap;
             this.archiveQueryDefaults = parsed.archiveQueryDefaults;
             this.messageArchives = parsed.messageArchives;
+            this.sceneKeys = parsed.sceneKeys;
+            this.sequenceKeys = parsed.sequenceKeys;
+            this.sceneDescMap = parsed.sceneDescMap;
+            this.sequenceDescMap = parsed.sequenceDescMap;
             this.messageArchiveConfigMap = new Map(parsed.messageArchives.map((archive) => [archive.key, archive]));
             for (const key of this.endpointKeys) {
                 if (!this.keyDescMap.has(key))
@@ -452,9 +463,15 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.subscribeStates(`${baseId}.read`);
                 this.subscribeStates(`${baseId}.testWrite`);
             }
+            for (const key of this.sceneKeys)
+                await this.createSceneObjects(key);
+            for (const key of this.sequenceKeys)
+                await this.createSequenceObjects(key);
             const validBaseIds = new Set(this.endpointKeys.map((k) => this.makeEndpointBaseId(k)));
             const validArchiveBases = new Set(this.archiveKeys.map((k) => `DA@.${this.sanitizeArchiveId(k)}`));
             const validMessageArchiveBases = new Set(this.messageArchives.map((archive) => `MA@.${this.sanitizeArchiveId(archive.key)}`));
+            const validSceneBases = new Set(this.sceneKeys.map((key) => `SC@.${(0, sceneSequence_1.sanitizeSceneId)(key)}`));
+            const validSequenceBases = new Set(this.sequenceKeys.map((key) => `SQ@.${(0, sceneSequence_1.sanitizeSequenceId)(key)}`));
             const objs = await this.getAdapterObjectsAsync();
             const legacyMaCoBases = new Set();
             for (const archive of this.messageArchives) {
@@ -492,6 +509,12 @@ class GiraEndpointAdapter extends utils.Adapter {
                         this.notifyAdmin(msg);
                         await this.delObjectAsync(id, { recursive: true });
                     }
+                }
+                else if (id.startsWith("SC@.") || id.startsWith("SQ@.")) {
+                    const base = id.split(".").slice(0, 2).join(".");
+                    const valid = id.startsWith("SC@.") ? validSceneBases : validSequenceBases;
+                    if (!valid.has(base))
+                        await this.delObjectAsync(base, { recursive: true });
                 }
                 else if (id.startsWith("info.subscriptions")) {
                     const msg = this.translate("Deleting legacy subscription state %s", id);
@@ -550,7 +573,7 @@ class GiraEndpointAdapter extends utils.Adapter {
                 this.failedSubscriptionMeta = new Set();
                 this.metaQueue = new coMetaQueue_1.CoMetaRequestQueue(async (key) => this.fetchMeta(key, this.keyIdMap.get(key) ?? this.makeEndpointBaseId(key)), this.fetchedMeta, coMetaQueue_1.CO_META_MAX_CONCURRENCY, this.failedSubscriptionMeta);
                 this.skipInitialUpdate = new Set(this.initialSkipUpdate);
-                const subscriptionKeys = (0, messageArchive_1.buildSubscriptionKeys)(this.endpointKeys, this.messageArchives.map((archive) => archive.key));
+                const subscriptionKeys = (0, messageArchive_1.buildSubscriptionKeys)([...this.endpointKeys, ...this.sceneKeys, ...this.sequenceKeys], this.messageArchives.map((archive) => archive.key));
                 this.warnedMissingSubscriptions.clear();
                 if (subscriptionKeys.length) {
                     this.pendingSubscriptions = new Set(this.endpointKeys.map((k) => this.normalizeKey(k)));
@@ -561,6 +584,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                     this.pendingSubscriptions.clear();
                     this.client.subscribe([]);
                 }
+                for (const key of this.sceneKeys)
+                    void this.initializeScene(key);
+                for (const key of this.sequenceKeys)
+                    void this.initializeSequence(key);
                 if (this.messageArchives.length) {
                     for (const archive of this.messageArchives) {
                         void this.readMessageArchive(archive).catch((err) => {
@@ -618,6 +645,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                     .catch(() => {
                     /* ignore */
                 });
+                for (const key of this.sceneKeys)
+                    this.setState(`${this.sceneBase(key)}.subscription`, false, true);
+                for (const key of this.sequenceKeys)
+                    this.setState(`${this.sequenceBase(key)}.subscription`, false, true);
             });
             this.client.on("error", (err) => {
                 const msg = this.translate("Client error: %s", err?.message || err);
@@ -636,6 +667,8 @@ class GiraEndpointAdapter extends utils.Adapter {
                 }
                 const data = payload?.data;
                 if (!data)
+                    return;
+                if (payload.type !== "subscribe" && await this.handleSpecialEvent(payload))
                     return;
                 const subscriptionKey = (0, messageArchive_1.getMessageArchiveSubscriptionKey)(payload, this.messageArchives.map((archive) => archive.key));
                 if (subscriptionKey) {
@@ -668,6 +701,10 @@ class GiraEndpointAdapter extends utils.Adapter {
                                 : undefined;
                         if (key === undefined)
                             continue;
+                        if (this.isSpecialKey(key)) {
+                            await this.setSpecialSubscription(key, false, item.code ?? payload.code);
+                            continue;
+                        }
                         const normalized = this.normalizeKey(key);
                         this.rememberKeyCase(normalized, String(key));
                         const baseId = this.keyIdMap.get(normalized) ?? this.makeEndpointBaseId(normalized);
@@ -719,6 +756,11 @@ class GiraEndpointAdapter extends utils.Adapter {
                         const key = item.uid !== undefined ? String(item.uid) : item.key !== undefined ? String(item.key) : undefined;
                         if (key === undefined)
                             continue;
+                        if (this.isSpecialKey(key)) {
+                            await this.setSpecialSubscription(key, item.code === undefined || item.code === 0, item.code);
+                            await this.applySpecialData(key, item.data ?? item);
+                            continue;
+                        }
                         const messageArchiveKeys = this.messageArchives.map((archive) => archive.key);
                         if ((0, messageArchive_1.isMessageArchiveKey)(key, messageArchiveKeys)) {
                             const archive = this.messageArchives.find((candidate) => candidate.key.toLowerCase() === String(key).toLowerCase());
@@ -1013,6 +1055,126 @@ class GiraEndpointAdapter extends utils.Adapter {
         k = k.trim().toUpperCase();
         return k.startsWith("CO@") ? k : `CO@${k}`;
     }
+    sceneBase(key) { return `SC@.${(0, sceneSequence_1.sanitizeSceneId)(key)}`; }
+    sequenceBase(key) { return `SQ@.${(0, sceneSequence_1.sanitizeSequenceId)(key)}`; }
+    isSpecialKey(key) { return /^SC@/i.test(key) || /^SQ@/i.test(key); }
+    async createSceneObjects(key) {
+        const base = this.sceneBase(key);
+        await this.setObjectNotExistsAsync(base, { type: "channel", common: { name: this.sceneDescMap.get(key) || key }, native: {} });
+        for (const action of [...Object.keys(sceneSequence_1.SCENE_ACTION_METHODS), "refreshActors"]) {
+            await this.setObjectNotExistsAsync(`${base}.${action}`, { type: "state", common: { name: action, type: "boolean", role: "button", read: true, write: true, def: false }, native: {} });
+            await this.setStateAsync(`${base}.${action}`, { val: false, ack: true });
+            this.subscribeStates(`${base}.${action}`);
+        }
+        const states = [
+            ["actors", { name: "Actors", type: "string", role: "json", read: true, write: false }],
+            ["lastModified", { name: "Last modified", type: "number", role: "value.time", read: true, write: false }],
+            ["meta", { name: "Metadata", type: "string", role: "json", read: true, write: false }],
+            ["subscription", { name: "Subscription", type: "boolean", role: "indicator", read: true, write: false }],
+            ["status", { name: "Status", type: "string", role: "text", read: true, write: false }],
+        ];
+        for (const [suffix, common] of states)
+            await this.setObjectNotExistsAsync(`${base}.${suffix}`, { type: "state", common, native: {} });
+        await this.setStateAsync(`${base}.subscription`, { val: false, ack: true });
+    }
+    async createSequenceObjects(key) {
+        const base = this.sequenceBase(key);
+        await this.setObjectNotExistsAsync(base, { type: "channel", common: { name: this.sequenceDescMap.get(key) || key }, native: {} });
+        for (const action of ["start", "stop"]) {
+            await this.setObjectNotExistsAsync(`${base}.${action}`, { type: "state", common: { name: action, type: "boolean", role: "button", read: true, write: true, def: false }, native: {} });
+            await this.setStateAsync(`${base}.${action}`, { val: false, ack: true });
+            this.subscribeStates(`${base}.${action}`);
+        }
+        const states = [
+            ["running", { name: "Running", type: "boolean", role: "indicator", read: true, write: false }],
+            ["restartAllowed", { name: "Restart allowed", type: "boolean", role: "indicator", read: true, write: false }],
+            ["lastChange", { name: "Last change", type: "number", role: "value.time", read: true, write: false }],
+            ["meta", { name: "Metadata", type: "string", role: "json", read: true, write: false }],
+            ["subscription", { name: "Subscription", type: "boolean", role: "indicator", read: true, write: false }],
+            ["status", { name: "Status", type: "string", role: "text", read: true, write: false }],
+        ];
+        for (const [suffix, common] of states)
+            await this.setObjectNotExistsAsync(`${base}.${suffix}`, { type: "state", common, native: {} });
+        await this.setStateAsync(`${base}.subscription`, { val: false, ack: true });
+    }
+    async specialCall(key, method) {
+        try {
+            const response = await this.client.call(key, method, undefined, this.makeTag(`${key.slice(0, 2).toLowerCase()}_${method}`));
+            await this.setStateAsync(`${/^SC@/i.test(key) ? this.sceneBase(key) : this.sequenceBase(key)}.status`, { val: (0, GiraClient_1.codeToMessage)(response?.code ?? 0), ack: true });
+            return response;
+        }
+        catch (err) {
+            const kind = /^SC@/i.test(key) ? "Scene" : "Sequence";
+            const message = `${kind} ${key} ${method} failed: ${err?.message || err}`;
+            this.log.warn(message);
+            await this.setStateAsync(`${/^SC@/i.test(key) ? this.sceneBase(key) : this.sequenceBase(key)}.status`, { val: message, ack: true });
+            throw err;
+        }
+    }
+    async initializeScene(key) {
+        const base = this.sceneBase(key);
+        try {
+            const [meta, actors] = await Promise.all([this.specialCall(key, "meta"), this.specialCall(key, "get_items")]);
+            await this.setStateAsync(`${base}.meta`, { val: JSON.stringify(meta?.data ?? meta), ack: true });
+            await this.setStateAsync(`${base}.actors`, { val: JSON.stringify(actors?.data ?? actors), ack: true });
+        }
+        catch { /* the individual call already reports the error */ }
+    }
+    async initializeSequence(key) {
+        const base = this.sequenceBase(key);
+        try {
+            const [meta, state] = await Promise.all([this.specialCall(key, "meta"), this.specialCall(key, "get_state")]);
+            const metadata = meta?.data ?? meta;
+            await this.setStateAsync(`${base}.meta`, { val: JSON.stringify(metadata), ack: true });
+            if (typeof metadata?.restart === "boolean")
+                await this.setStateAsync(`${base}.restartAllowed`, { val: metadata.restart, ack: true });
+            await this.applySpecialData(key, state?.data ?? state);
+        }
+        catch { /* the individual call already reports the error */ }
+    }
+    async setSpecialSubscription(rawKey, success, code) {
+        const key = /^SC@/i.test(rawKey) ? (0, sceneSequence_1.normalizeSceneKey)(rawKey) : (0, sceneSequence_1.normalizeSequenceKey)(rawKey);
+        const base = /^SC@/i.test(key) ? this.sceneBase(key) : this.sequenceBase(key);
+        await this.setStateAsync(`${base}.subscription`, { val: success, ack: true });
+        await this.setStateAsync(`${base}.status`, { val: (0, GiraClient_1.codeToMessage)(code ?? 0), ack: true });
+        if (success && /^SQ@/i.test(key))
+            void this.initializeSequence(key);
+    }
+    async applySpecialData(rawKey, data) {
+        const key = /^SC@/i.test(rawKey) ? (0, sceneSequence_1.normalizeSceneKey)(rawKey) : (0, sceneSequence_1.normalizeSequenceKey)(rawKey);
+        const timestamp = (0, sceneSequence_1.extractTimestamp)(data);
+        if (/^SC@/i.test(key)) {
+            if (timestamp !== undefined)
+                await this.setStateAsync(`${this.sceneBase(key)}.lastModified`, { val: timestamp, ack: true });
+            const refreshMethod = (0, sceneSequence_1.getScenePushRefreshMethod)(data);
+            if (refreshMethod) {
+                try {
+                    const actors = await this.specialCall(key, refreshMethod);
+                    await this.setStateAsync(`${this.sceneBase(key)}.actors`, {
+                        val: JSON.stringify(actors?.data ?? actors),
+                        ack: true,
+                    });
+                }
+                catch {
+                    // specialCall records the failure; a push must never break event handling.
+                }
+            }
+        }
+        else {
+            const running = (0, sceneSequence_1.extractRunning)(data);
+            if (running !== undefined)
+                await this.setStateAsync(`${this.sequenceBase(key)}.running`, { val: running, ack: true });
+            if (timestamp !== undefined)
+                await this.setStateAsync(`${this.sequenceBase(key)}.lastChange`, { val: timestamp, ack: true });
+        }
+    }
+    async handleSpecialEvent(payload) {
+        const rawKey = payload?.subscription?.key ?? payload?.data?.key ?? payload?.data?.uid;
+        if (!rawKey || !this.isSpecialKey(String(rawKey)))
+            return false;
+        await this.applySpecialData(String(rawKey), payload?.data?.data ?? payload.data);
+        return true;
+    }
     rememberKeyCase(normalized, original) {
         if (!normalized)
             return;
@@ -1202,10 +1364,12 @@ class GiraEndpointAdapter extends utils.Adapter {
             this.client?.removeAllListeners();
             if (this.client) {
                 try {
-                    this.client.unsubscribe(this.endpointKeys);
-                    const states = await this.getStatesAsync("CO@.*.subscription");
-                    for (const id of Object.keys(states)) {
-                        await this.setStateAsync(id, { val: false, ack: true });
+                    this.client.unsubscribe([...this.endpointKeys, ...this.sceneKeys, ...this.sequenceKeys]);
+                    for (const pattern of ["CO@.*.subscription", "SC@.*.subscription", "SQ@.*.subscription"]) {
+                        const states = await this.getStatesAsync(pattern);
+                        for (const id of Object.keys(states)) {
+                            await this.setStateAsync(id, { val: false, ack: true });
+                        }
                     }
                 }
                 catch (err) {
@@ -1236,10 +1400,40 @@ class GiraEndpointAdapter extends utils.Adapter {
             return;
         if (this.handleMessageArchiveStateChange(id, state))
             return;
+        if (this.handleSceneSequenceStateChange(id, state))
+            return;
         if (this.handleArchiveStateChange(id, state))
             return;
         if (this.handleDirectCoStateChange(id, state))
             return;
+    }
+    handleSceneSequenceStateChange(id, state) {
+        if (state.ack || state.val !== true)
+            return false;
+        const scene = this.sceneKeys.find((key) => id.startsWith(`${this.sceneBase(key)}.`));
+        if (scene) {
+            const action = id.slice(this.sceneBase(scene).length + 1);
+            const method = action === "refreshActors" ? "get_items" : sceneSequence_1.SCENE_ACTION_METHODS[action];
+            if (!method)
+                return false;
+            void this.specialCall(scene, method).then(async (response) => {
+                if (method === "get_items")
+                    await this.setStateAsync(`${this.sceneBase(scene)}.actors`, { val: JSON.stringify(response?.data ?? response), ack: true });
+                if (method === "learn")
+                    await this.initializeScene(scene);
+            }).catch(() => undefined).finally(() => this.setState(id, false, true));
+            return true;
+        }
+        const sequence = this.sequenceKeys.find((key) => id.startsWith(`${this.sequenceBase(key)}.`));
+        if (sequence) {
+            const action = id.slice(this.sequenceBase(sequence).length + 1);
+            const method = sceneSequence_1.SEQUENCE_ACTION_METHODS[action];
+            if (!method)
+                return false;
+            void this.specialCall(sequence, method).then(() => this.initializeSequence(sequence)).catch(() => undefined).finally(() => this.setState(id, false, true));
+            return true;
+        }
+        return false;
     }
     handleMappedStateChange(id, state, mapped) {
         if (this.suppressStateChange.has(id)) {

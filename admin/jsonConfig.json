@@ -639,6 +639,88 @@
           ]
         }
       }
+    },
+    "scenesTab": {
+      "type": "panel",
+      "label": "Szenen",
+      "items": {
+        "scenesHeader": {
+          "type": "header",
+          "text": "Konfigurierte Szenen",
+          "size": 2
+        },
+        "scenes": {
+          "type": "accordion",
+          "label": "Szenen",
+          "titleAttr": "key",
+          "items": [
+            {
+              "type": "text",
+              "attr": "key",
+              "label": "SC@",
+              "help": "Mit oder ohne SC@ möglich",
+              "xs": 12,
+              "md": 5
+            },
+            {
+              "type": "text",
+              "attr": "name",
+              "label": "Beschreibung",
+              "xs": 12,
+              "md": 5
+            },
+            {
+              "type": "checkbox",
+              "attr": "enabled",
+              "label": "Aktiviert",
+              "default": true,
+              "xs": 12,
+              "md": 2
+            }
+          ]
+        }
+      }
+    },
+    "sequencesTab": {
+      "type": "panel",
+      "label": "Sequenzen",
+      "items": {
+        "sequencesHeader": {
+          "type": "header",
+          "text": "Konfigurierte Sequenzen",
+          "size": 2
+        },
+        "sequences": {
+          "type": "accordion",
+          "label": "Sequenzen",
+          "titleAttr": "key",
+          "items": [
+            {
+              "type": "text",
+              "attr": "key",
+              "label": "SQ@",
+              "help": "Mit oder ohne SQ@ möglich",
+              "xs": 12,
+              "md": 5
+            },
+            {
+              "type": "text",
+              "attr": "name",
+              "label": "Beschreibung",
+              "xs": 12,
+              "md": 5
+            },
+            {
+              "type": "checkbox",
+              "attr": "enabled",
+              "label": "Aktiviert",
+              "default": true,
+              "xs": 12,
+              "md": 2
+            }
+          ]
+        }
+      }
     }
   }
 }
