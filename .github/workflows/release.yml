@@ -1,0 +1,187 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Target version, for example 0.6.0"
+        required: true
+        type: string
+      source:
+        description: "Source branch for the release"
+        required: true
+        default: work
+        type: choice
+        options:
+          - work
+          - main
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: create-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release from ${{ inputs.source }}
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source }}
+          fetch-depth: 0
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Validate release input
+        id: meta
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use X.Y.Z, for example 0.6.0"
+            exit 1
+          fi
+
+          if [ "$SOURCE" != "work" ] && [ "$SOURCE" != "main" ]; then
+            echo "Source must be work or main"
+            exit 1
+          fi
+
+          git fetch origin "$SOURCE" --tags
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies and refresh lockfile
+        run: npm install --no-audit --no-fund
+
+      - name: Set release version
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+          VERSION="$VERSION" node <<'NODE'
+          const fs = require('fs');
+          const version = process.env.VERSION;
+          const file = 'io-package.json';
+          const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (!data.common || typeof data.common !== 'object') {
+            throw new Error('io-package.json common section is missing');
+          }
+          data.common.version = version;
+          fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
+          NODE
+
+      - name: Verify synchronized versions
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          LOCK_VERSION="$(node -p "require('./package-lock.json').version")"
+          IO_PACKAGE_VERSION="$(node -p "require('./io-package.json').common.version")"
+
+          [ "$PACKAGE_VERSION" = "$VERSION" ] || { echo "package.json version mismatch"; exit 1; }
+          [ "$LOCK_VERSION" = "$VERSION" ] || { echo "package-lock.json version mismatch"; exit 1; }
+          [ "$IO_PACKAGE_VERSION" = "$VERSION" ] || { echo "io-package.json version mismatch"; exit 1; }
+
+      - name: Type check
+        run: npm run check --if-present
+
+      - name: Build
+        run: npm run build --if-present
+
+      - name: Test
+        run: npm run test --if-present
+
+      - name: Sanity check
+        run: npm pack --dry-run
+
+      - name: Commit release version
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json io-package.json
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Release v$VERSION"
+            git push origin "HEAD:$SOURCE"
+          else
+            echo "Version files already contain $VERSION."
+          fi
+
+      - name: Create or verify release tag
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
+          git fetch origin --tags
+          HEAD_SHA="$(git rev-parse HEAD)"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            TAG_SHA="$(git rev-list -n 1 "$TAG")"
+            if [ "$TAG_SHA" != "$HEAD_SHA" ]; then
+              echo "Tag $TAG already exists on $TAG_SHA, but selected branch is at $HEAD_SHA"
+              exit 1
+            fi
+            echo "Tag $TAG already points to this release commit; reusing it."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+  publish:
+    name: Publish npm package
+    needs: prepare
+    uses: ./.github/workflows/publish.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+    secrets: inherit
+
+  release:
+    name: Create GitHub Release
+    needs:
+      - prepare
+      - publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create GitHub Release with generated notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists; nothing to do."
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$TAG" \
+              --generate-notes
+          fi
